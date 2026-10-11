@@ -12,14 +12,16 @@ Fan-made and unofficial. It's not affiliated with or endorsed by Niche Worlds Cu
 - **Releases:** [latest release](https://github.com/jessemlay/mnm-spawn-timer/releases/latest)
 - **Latest build:** open the newest [Build run](https://github.com/jessemlay/mnm-spawn-timer/actions/workflows/build.yml) and download its artifact. You need to be signed in to GitHub.
 
-Each build has two exes:
+Each build has three files:
 
-| File | Size | Needs |
+| File | Size | What it is |
 |---|---|---|
-| `SpawnTimer.exe` | ~70 MB | Nothing; .NET is bundled in |
-| `SpawnTimer-needs-dotnet9.exe` | ~0.3 MB | The [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) |
+| **`SpawnTimer-Setup.exe`** (recommended) | ~2 MB | Installer. It checks for the .NET 9 Desktop Runtime and, if it's missing, downloads (~58 MB) and installs it from Microsoft. It adds a Start Menu shortcut, an optional desktop icon and "Start with Windows", and an uninstaller in Windows Settings ▸ Apps. Running it again upgrades in place; your settings are kept. |
+| `SpawnTimer.exe` | ~70 MB | Portable. .NET is bundled in, so there's nothing to install: just run it. |
+| `SpawnTimer-needs-dotnet9.exe` | ~0.3 MB | Portable. Needs the [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0). |
 
-Windows may show a SmartScreen warning because the exe isn't code-signed: click **More info ▸ Run anyway**.
+Windows may show a SmartScreen warning because the files aren't code-signed: click **More info ▸ Run anyway**.
+Settings live in `%APPDATA%\SpawnTimer` and are left in place when you uninstall.
 The app lives in the system tray: right-click for Settings, Unlock/Lock overlays, Export, Reset session or Exit.
 
 ## Build it yourself
