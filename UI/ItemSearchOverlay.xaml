@@ -1,0 +1,38 @@
+<ui:OverlayWindow x:Class="SpawnTimer.UI.ItemSearchOverlay"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="clr-namespace:SpawnTimer.UI"
+                  Title="Spawn Timer Item Lookup">
+    <Border x:Name="Frame" CornerRadius="8" Padding="12,10" BorderThickness="2" BorderBrush="#7FD4FF">
+        <Border.LayoutTransform>
+            <ScaleTransform x:Name="Zoom" ScaleX="1" ScaleY="1" />
+        </Border.LayoutTransform>
+        <StackPanel Orientation="Horizontal">
+            <StackPanel.Effect>
+                <DropShadowEffect ShadowDepth="0" BlurRadius="4" Color="Black" Opacity="0.9" />
+            </StackPanel.Effect>
+
+            <!-- Search + results -->
+            <StackPanel Width="330" VerticalAlignment="Top">
+                <DockPanel>
+                    <TextBlock x:Name="ZoneLabel" DockPanel.Dock="Right" Foreground="#99FFFFFF" FontSize="11" />
+                    <TextBlock Text="ITEM LOOKUP" Foreground="#7FD4FF" FontSize="11" FontWeight="Bold" />
+                </DockPanel>
+                <Border Background="#26FFFFFF" CornerRadius="4" Padding="8,5" Margin="0,6,0,4" BorderBrush="#557FD4FF" BorderThickness="1">
+                    <TextBlock FontSize="16" TextTrimming="CharacterEllipsis">
+                        <Run x:Name="Typed" Foreground="White" /><Run x:Name="Ghost" Foreground="#80FFFFFF" /><Run Text="▏" Foreground="#7FD4FF" />
+                    </TextBlock>
+                </Border>
+                <TextBlock x:Name="Hint" FontSize="10.5" Foreground="#99FFFFFF" TextWrapping="Wrap"
+                           Text="Type to search · ↑↓ select · Tab complete · Esc close" />
+                <StackPanel x:Name="Results" Margin="0,6,0,0" />
+            </StackPanel>
+
+            <!-- Stat card for the highlighted item -->
+            <Border x:Name="CardBorder" Width="290" Margin="12,0,0,0" Padding="10,8" CornerRadius="6" Background="#33000000"
+                    BorderBrush="#4DFFC857" BorderThickness="1" VerticalAlignment="Top" Visibility="Collapsed">
+                <StackPanel x:Name="Card" />
+            </Border>
+        </StackPanel>
+    </Border>
+</ui:OverlayWindow>

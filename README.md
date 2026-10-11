@@ -58,6 +58,22 @@ Nothing in the app pulls focus from the game: there are no confirmation boxes, a
   To undo, delete the name from Settings ▸ Alerts ▸ Named mobs ▸ "Don't create timers for".
 - **Tray ▸ Export session** saves straight to `Documents\Spawn Timer Sessions\` and shows a banner. There's no Save As dialog.
 
+## Item lookup
+
+Press **Ctrl+Alt+I** (changeable) in game and start typing an item name. The game keeps focus: while the box is open
+your keys go to the search instead of the game, and Alt/Win shortcuts like Alt+Tab still work.
+
+- Results list drops from **your current zone first** (★), then all ~5,200 wiki items.
+- Faint **autocomplete** text shows the best match: **Tab** takes it, **↑/↓** move, **Enter** fills in the highlighted
+  item, **Backspace** (Ctrl = whole word), **Esc** clears, then closes.
+- The highlighted item's **stat card** shows slot, AC, damage/delay, stats, resists, effect, classes, races,
+  weight/size and where it drops. Set **your class** (e.g. `CLR`) in Settings ▸ Overlays to get ✓ usable / ✗ not usable.
+- When the app sees you've entered a zone (from your loot), it **preloads that zone's items** in the background,
+  so lookups there are instant.
+
+Data comes from the [M&M Wiki on Miraheze](https://monstersandmemories.miraheze.org/) (CC BY-SA 4.0) and is cached
+for 7 days in `%LOCALAPPDATA%\SpawnTimer\item-cache\`.
+
 ## Hotkeys (defaults, change them in Settings ▸ Hotkeys)
 
 | Hotkey | Action |

@@ -34,6 +34,12 @@ internal sealed class KeyboardHook : IDisposable
     /// <summary>Ignore all keys (e.g. while a settings field is capturing a new hotkey).</summary>
     public bool Suspended { get; set; }
 
+    /// <summary>
+    /// While set (e.g. the item search box is open), every key goes here first; return true to keep it from the game.
+    /// Lets the overlay take typing without ever taking focus from the game.
+    /// </summary>
+    public Func<int, ModifierKeys, bool>? Capture { get; set; }
+
     /// <summary>Let matched hotkeys continue on to the game.</summary>
     public bool PassThrough { get; set; }
 
@@ -49,7 +55,20 @@ internal sealed class KeyboardHook : IDisposable
                 var isRepeat = !_down.Add(vk);
                 if (isRepeat)
                 {
-                    if (_swallowed.Contains(vk)) return (IntPtr)1;
+                    if (_swallowed.Contains(vk))
+                    {
+                        // Held keys auto-repeat in the search box (Backspace, arrows, letters).
+                        Capture?.Invoke(vk, CurrentModifiers());
+                        return (IntPtr)1;
+                    }
+                }
+                else if (!Suspended && !IsModifier(vk) && Capture is { } capture)
+                {
+                    if (capture(vk, CurrentModifiers()))
+                    {
+                        _swallowed.Add(vk);
+                        return (IntPtr)1;
+                    }
                 }
                 else if (!Suspended && !IsModifier(vk) && KeyPressed is { } handler)
                 {

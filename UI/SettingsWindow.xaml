@@ -164,6 +164,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <TextBlock Style="{StaticResource Label}" Text="Start / resume" />
@@ -190,6 +191,11 @@
                         <ui:HotkeyBox Grid.Row="4" Grid.Column="1" Value="{Binding Hotkeys.ToggleEdit}" />
                         <TextBlock Grid.Row="4" Grid.Column="2" Style="{StaticResource Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
                                    Text="Unlock to drag overlays without opening Settings." />
+
+                        <TextBlock Grid.Row="5" Style="{StaticResource Label}" Text="Item lookup" />
+                        <ui:HotkeyBox Grid.Row="5" Grid.Column="1" Value="{Binding Hotkeys.ItemSearch}" />
+                        <TextBlock Grid.Row="5" Grid.Column="2" Style="{StaticResource Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                   Text="Opens/closes the item search over the game." />
                     </Grid>
 
                     <CheckBox Margin="0,14,0,0" IsChecked="{Binding Hotkeys.HoldToMove}"
@@ -281,6 +287,28 @@
                                     <Button Content="Export session to CSV…" Click="ExportSession_Click" />
                                     <Button Content="Reset session" Click="ResetSession_Click" />
                                 </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Item lookup (hotkey on the Hotkeys tab)">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Label}" Width="130" Text="Your class code" />
+                                    <TextBox Width="60" Text="{Binding ItemLookup.YourClass}" CharacterCasing="Upper" MaxLength="4" />
+                                    <TextBlock Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="8,0,0,0"
+                                               Text="e.g. CLR, as used on wiki item pages. Cards then show ✓ usable / ✗ not usable." />
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding ItemLookup.PreloadZoneItems}"
+                                          Content="Preload the current zone's items when you enter a zone (instant lookups there)" />
+                                <DockPanel Margin="0,6,0,0">
+                                    <TextBlock Style="{StaticResource Label}" Width="130" Text="Size" />
+                                    <TextBlock DockPanel.Dock="Right" Width="44" Text="{Binding ItemOverlay.Scale, StringFormat={}{0:0.0}×}" VerticalAlignment="Center" />
+                                    <Slider Minimum="0.6" Maximum="2.5" Value="{Binding ItemOverlay.Scale}" TickFrequency="0.1" IsSnapToTickEnabled="True" />
+                                </DockPanel>
+                                <TextBlock Style="{StaticResource Hint}">
+                                    While the search is open your typing goes to the box, not the game (the game keeps focus).
+                                    Item data: M&amp;M Wiki on Miraheze (CC BY-SA 4.0), cached for 7 days.
+                                </TextBlock>
                             </StackPanel>
                         </GroupBox>
 

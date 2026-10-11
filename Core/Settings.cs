@@ -135,6 +135,7 @@ public sealed class HotkeySettings
     public string Restart { get; set; } = "Ctrl+Alt+3";
     public string NextTimer { get; set; } = "Ctrl+Alt+4";
     public string ToggleEdit { get; set; } = "Ctrl+Alt+0";
+    public string ItemSearch { get; set; } = "Ctrl+Alt+I";
 
     /// <summary>When true the game still receives the key press after the timer handles it.</summary>
     public bool PassThrough { get; set; }
@@ -230,6 +231,15 @@ public sealed class NamedSettings
     }
 }
 
+public sealed class ItemLookupSettings
+{
+    /// <summary>Three-letter class code from the wiki (e.g. CLR) for the usable/not-usable mark; empty = don't check.</summary>
+    public string YourClass { get; set; } = "";
+
+    /// <summary>Fetch the current zone's items in the background when you enter it.</summary>
+    public bool PreloadZoneItems { get; set; } = true;
+}
+
 public sealed class UpdateSettings
 {
     /// <summary>Look for a newer release on startup and every few hours.</summary>
@@ -245,6 +255,8 @@ public sealed class UpdateSettings
 public sealed class AppSettings
 {
     public UpdateSettings Updates { get; set; } = new();
+    public ItemLookupSettings ItemLookup { get; set; } = new();
+    public OverlaySettings ItemOverlay { get; set; } = new() { BackgroundOpacity = 88 };
     public ObservableCollection<TimerDef> Timers { get; set; } = new();
     public HotkeySettings Hotkeys { get; set; } = new();
     public OverlaySettings TimerOverlay { get; set; } = new();
@@ -314,6 +326,8 @@ public static class SettingsStore
         settings.Named ??= new NamedSettings();
         settings.AlertOverlay ??= new OverlaySettings { BackgroundOpacity = 75 };
         settings.Updates ??= new UpdateSettings();
+        settings.ItemLookup ??= new ItemLookupSettings();
+        settings.ItemOverlay ??= new OverlaySettings { BackgroundOpacity = 88 };
         if (settings.Timers.Count == 0) settings.Timers.Add(new TimerDef());
 
         // Guard against duplicate ids from hand-edited files.

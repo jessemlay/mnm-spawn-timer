@@ -33,6 +33,8 @@ public partial class App : Application
     private LedgerWatcher? _ledger;
     private DispatcherTimer? _tick;
     private DispatcherTimer? _updateTimer;
+    private ItemLookupController? _itemLookup;
+    private string _lastLedgerZone = "";
     private Forms.ToolStripMenuItem? _updateMenuItem;
     private UpdateInfo? _availableUpdate;
     private bool _updateBusy;
@@ -101,6 +103,13 @@ public partial class App : Application
         {
             if (_hook != null) _hook.Suspended = capturing;
         };
+
+        _itemLookup = new ItemLookupController(Settings);
+        _itemLookup.OpenChanged += open =>
+        {
+            if (_hook != null) _hook.Capture = open ? CaptureKey : null;
+        };
+        _ = _itemLookup.PreloadIndexAsync();
 
         CreateTray();
         ApplySettings(save: false);
@@ -249,6 +258,7 @@ public partial class App : Application
         _timerOverlay!.ApplyAppearance(Settings.TimerOverlay);
         _meterOverlay!.ApplyAppearance(Settings.MeterOverlay);
         _alertOverlay!.ApplyAppearance(Settings.AlertOverlay);
+        _itemLookup?.ApplySettings();
         SetOverlayVisible(_timerOverlay, Settings.TimerOverlay.Visible);
         SetOverlayVisible(_meterOverlay, Settings.MeterOverlay.Visible);
         SetOverlayVisible(_alertOverlay, Settings.AlertOverlay.Visible);
@@ -485,6 +495,7 @@ public partial class App : Application
             if (Timers.Count > 0) _activeIndex = (_activeIndex + 1) % Timers.Count;
         });
         Bind(h.ToggleEdit, () => SetEditMode(!_editMode));
+        Bind(h.ItemSearch, () => _itemLookup?.Toggle());
 
         foreach (var state in Timers)
         {
@@ -501,6 +512,14 @@ public partial class App : Application
     {
         var hotkey = Hotkey.Parse(text);
         if (!hotkey.IsEmpty) _bindings.Add((hotkey, action));
+    }
+
+    /// <summary>While the item lookup is open: hotkeys still work (incl. closing it), every other key goes to the box.</summary>
+    private bool CaptureKey(int vk, System.Windows.Input.ModifierKeys mods)
+    {
+        var hotkey = new Hotkey(mods, System.Windows.Input.KeyInterop.KeyFromVirtualKey(vk));
+        if (OnGlobalKey(hotkey)) return true;
+        return _itemLookup?.HandleKey(vk, mods) ?? false;
     }
 
     /// <summary>Runs inside the keyboard hook: match only, and defer the action so the hook returns fast.</summary>
@@ -561,6 +580,14 @@ public partial class App : Application
         }
         if (historyChanged) SettingsStore.Save(Settings); // camp history survives restarts
         _lastMeterRefresh = DateTime.MinValue;
+
+        // Zone changes (seen on loot entries, including history replayed at startup) preload that zone's items.
+        var zone = events.LastOrDefault(e => e.Zone.Length > 0)?.Zone;
+        if (zone != null && zone != _lastLedgerZone)
+        {
+            _lastLedgerZone = zone;
+            _ = _itemLookup?.OnZoneAsync(zone);
+        }
     }
 
     private bool BackfillNamedSeen(LedgerEvent e)
