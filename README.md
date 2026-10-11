@@ -1,17 +1,42 @@
 # Spawn Timer for Monsters & Memories
 
+[![Build](https://github.com/jessemlay/mnm-spawn-timer/actions/workflows/build.yml/badge.svg)](https://github.com/jessemlay/mnm-spawn-timer/actions/workflows/build.yml)
+
 A click-through, always-on-top overlay with spawn timers you control with global hotkeys.
 It also has an optional session meter built from the game's own loot ledger.
 
-## Run it
+Fan-made and unofficial. It's not affiliated with or endorsed by Niche Worlds Cult.
+
+## Download
+
+- **Releases:** [latest release](https://github.com/jessemlay/mnm-spawn-timer/releases/latest)
+- **Latest build:** open the newest [Build run](https://github.com/jessemlay/mnm-spawn-timer/actions/workflows/build.yml) and download its artifact. You need to be signed in to GitHub.
+
+Each build has two exes:
+
+| File | Size | Needs |
+|---|---|---|
+| `SpawnTimer.exe` | ~70 MB | Nothing; .NET is bundled in |
+| `SpawnTimer-needs-dotnet9.exe` | ~0.3 MB | The [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) |
+
+Windows may show a SmartScreen warning because the exe isn't code-signed: click **More info ▸ Run anyway**.
+The app lives in the system tray: right-click for Settings, Unlock/Lock overlays, Export, Reset session or Exit.
+
+## Build it yourself
 
 ```
 dotnet publish -c Release -o publish
 publish\SpawnTimer.exe
 ```
 
-It needs the .NET 9 Desktop Runtime, which is already installed if you have the .NET 9 SDK.
-The app lives in the system tray: right-click for Settings, Unlock/Lock overlays, Reset session or Exit.
+### Making a release
+
+Every push to `main` builds both exes as a workflow artifact. To publish a release with the exes attached, push a version tag:
+
+```
+git tag v1.0.0
+git push origin v1.0.0
+```
 
 **Set the game to Borderless or Windowed.** No overlay can draw over exclusive fullscreen.
 
