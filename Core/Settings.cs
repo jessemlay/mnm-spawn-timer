@@ -36,6 +36,10 @@ public sealed class TimerDef : Observable
     private bool _autoStart;
     private string _mobNames = "";
     private bool _autoCreated;
+    private string _placeholderNames = "";
+    private DateTime? _lastNamedSeenUtc;
+    private int _placeholderCycles;
+    private bool _lastCycleWasPlaceholder;
 
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -71,12 +75,57 @@ public sealed class TimerDef : Observable
     public string MobNames { get => _mobNames; set => Set(ref _mobNames, value ?? ""); }
 
     /// <summary>True for timers created automatically when a named mob was looted.</summary>
-    public bool AutoCreated { get => _autoCreated; set { if (Set(ref _autoCreated, value)) Raise(nameof(ListLabel)); } }
+    public bool AutoCreated
+    {
+        get => _autoCreated;
+        set { if (Set(ref _autoCreated, value)) { Raise(nameof(ListLabel)); Raise(nameof(IsSpawnPoint)); } }
+    }
+
+    /// <summary>
+    /// Mobs that can spawn in the named's place. Looting one while the spawn window is open restarts the timer.
+    /// </summary>
+    public string PlaceholderNames
+    {
+        get => _placeholderNames;
+        set { if (Set(ref _placeholderNames, value ?? "")) Raise(nameof(IsSpawnPoint)); }
+    }
+
+    // Camp history, saved so it survives restarts.
+    public DateTime? LastNamedSeenUtc { get => _lastNamedSeenUtc; set { if (Set(ref _lastNamedSeenUtc, value)) Raise(nameof(HistorySummary)); } }
+    public int PlaceholderCycles { get => _placeholderCycles; set { if (Set(ref _placeholderCycles, Math.Max(0, value))) Raise(nameof(HistorySummary)); } }
+    public bool LastCycleWasPlaceholder { get => _lastCycleWasPlaceholder; set => Set(ref _lastCycleWasPlaceholder, value); }
+
+    /// <summary>When the current countdown started (named/PH kill or manual restart), so it can resume after an app restart.</summary>
+    public DateTime? LastCycleStartUtc { get; set; }
+
+    /// <summary>A spawn point can be the named or its placeholder, so "up" is a maybe.</summary>
+    [JsonIgnore]
+    public bool IsSpawnPoint => AutoCreated || !string.IsNullOrWhiteSpace(PlaceholderNames);
 
     [JsonIgnore]
     public string ListLabel => AutoCreated ? $"{Name}  (named)" : Name;
 
+    [JsonIgnore]
+    public string HistorySummary
+    {
+        get
+        {
+            var seen = LastNamedSeenUtc is { } t ? $"{t.ToLocalTime():g} ({TimeFormat.Ago(DateTime.UtcNow - t)})" : "not seen yet";
+            return $"Named last looted: {seen}.  Placeholder cycles since: {PlaceholderCycles}.";
+        }
+    }
+
     public bool MatchesCorpse(string corpse) => NameMatcher.MatchesAny(corpse, MobNames, allowCommas: true);
+
+    public bool MatchesPlaceholder(string corpse) => NameMatcher.MatchesAny(corpse, PlaceholderNames, allowCommas: true);
+
+    public void ResetHistory()
+    {
+        LastNamedSeenUtc = null;
+        LastCycleStartUtc = null;
+        PlaceholderCycles = 0;
+        LastCycleWasPlaceholder = false;
+    }
 }
 
 public sealed class HotkeySettings

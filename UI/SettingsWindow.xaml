@@ -85,6 +85,9 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <TextBlock Style="{StaticResource Label}" Text="Name" />
@@ -125,6 +128,22 @@
                                 End with * to match the start of a name (e.g. a skeletal*). Requires Game data to be on.
                                 The game only records loot, so the timer starts when the corpse is looted, not when the mob dies.
                             </TextBlock>
+
+                            <TextBlock Grid.Row="8" Style="{StaticResource Label}" Text="Placeholder mobs" VerticalAlignment="Top" Margin="0,10,12,0" />
+                            <TextBox Grid.Row="8" Grid.Column="1" Height="56" Margin="0,8,0,3" AcceptsReturn="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto" Text="{Binding PlaceholderNames}" />
+
+                            <TextBlock Grid.Row="9" Grid.Column="1" Style="{StaticResource Hint}">
+                                Mobs that can spawn at this spot instead of the named. Looting one while the timer is at zero
+                                restarts it as a new cycle ("PH"), and the alert says the spawn could be either. Placeholder kills
+                                only count once the timer has run out, so the same mob dying elsewhere won't reset a running countdown.
+                                Don't know the name? /consider whatever spawns at the named's spot when the timer is up.
+                            </TextBlock>
+
+                            <DockPanel Grid.Row="10" Grid.Column="1" Margin="0,8,0,0">
+                                <Button DockPanel.Dock="Right" Content="Reset history" Margin="8,0,0,0" Click="ResetHistory_Click" />
+                                <TextBlock Text="{Binding HistorySummary, Mode=OneWay}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" />
+                            </DockPanel>
                         </Grid>
                     </ScrollViewer>
                 </Grid>

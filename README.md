@@ -84,6 +84,15 @@ once a second and enables:
   When that timer runs out you get a **NAMED SPAWN DUE** alert. This is a prediction (loot time + respawn time),
   because the game doesn't log spawns.
 
+#### Placeholders
+
+Many named mobs share their spawn point with a placeholder (PH), so a named timer really tracks the **spawn point**.
+When it runs out the overlay shows **UP?** and the banner says *named or placeholder*.
+Each timer has a **Placeholder mobs** list (Settings ▸ Timers). Looting a listed PH **while the timer is at zero**
+restarts it as a new cycle ("PLACEHOLDER DOWN", "PH cycle 2"). PH kills during a running countdown are ignored,
+because the Ledger has no locations and the same mob may die elsewhere. Under the bar, the overlay shows the camp history
+(e.g. `PH cycle 2 · named 47m ago`). This history survives restarts and is filled in from today's Ledger when the app starts.
+
 Banners stack (up to 4), fade out after a set time and can be dragged anywhere while the overlays are unlocked.
 
 ### Adding drop alerts from a zone

@@ -278,6 +278,7 @@ public partial class App : Application
             state = new SpawnTimerState(def);
             state.Warned += _ => _alerts.Warn(Settings.Alerts);
             state.Expired += s => ShowTimerUp(s.Def, forceSound: false);
+            state.ResumeSavedCycle(DateTime.UtcNow);
             desired.Add(state);
         }
         foreach (var removed in existing.Values) removed.Detach();
@@ -342,6 +343,7 @@ public partial class App : Application
     private void OnLedgerEvents(IReadOnlyList<LedgerEvent> events)
     {
         var now = DateTime.UtcNow;
+        var historyChanged = false;
         foreach (var e in events)
         {
             // Anyone acting in or named by the ledger is a player, never a named mob.
@@ -351,8 +353,14 @@ public partial class App : Application
 
             Session.Apply(e);
 
-            // Alerts and auto-restarts only for loot from this session, not history replayed on startup.
-            if (e.Time < _appStart || e.Kind is not (LedgerKind.ItemLoot or LedgerKind.CoinLoot)) continue;
+            if (e.Kind is not (LedgerKind.ItemLoot or LedgerKind.CoinLoot)) continue;
+
+            // History replayed on startup: no alerts or restarts, but remember when each named was last looted.
+            if (e.Time < _appStart)
+            {
+                historyChanged |= BackfillNamedSeen(e);
+                continue;
+            }
 
             if (e.Kind == LedgerKind.ItemLoot && Settings.DropAlerts.Enabled && !string.IsNullOrEmpty(e.Item)
                 && (!Settings.DropAlerts.MineOnly || e.IsMine)
@@ -364,9 +372,49 @@ public partial class App : Application
             if (e.Corpse == null) continue;
             if (Settings.Named.Enabled && NamedDetector.IsNamed(e.Corpse, Settings.Named, _knownPlayers))
                 OnNamedLooted(e);
-            foreach (var timer in Timers) timer.TryAutoRestart(e.Corpse, e.Time.UtcDateTime, now);
+            foreach (var timer in Timers)
+            {
+                var kind = timer.TryAutoRestart(e.Corpse, e.Time.UtcDateTime, now);
+                if (kind == AutoRestartKind.Placeholder) ShowPlaceholderDown(timer.Def, e.Corpse);
+                historyChanged |= kind != AutoRestartKind.None;
+            }
         }
+        if (historyChanged) SettingsStore.Save(Settings); // camp history survives restarts
         _lastMeterRefresh = DateTime.MinValue;
+    }
+
+    private bool BackfillNamedSeen(LedgerEvent e)
+    {
+        if (e.Corpse == null) return false;
+        var changed = false;
+        var at = e.Time.UtcDateTime;
+        foreach (var def in Settings.Timers)
+        {
+            if (!def.MatchesCorpse(e.Corpse)) continue;
+            if (!(def.LastNamedSeenUtc >= at))
+            {
+                def.LastNamedSeenUtc = at;
+                changed = true;
+            }
+
+            // A kill newer than the saved cycle: run the countdown from it (UP? if it's already past).
+            if (def.AutoStart && !(def.LastCycleStartUtc >= at)
+                && Timers.FirstOrDefault(t => ReferenceEquals(t.Def, def)) is { Phase: not TimerPhase.Paused } state)
+            {
+                def.PlaceholderCycles = 0;
+                def.LastCycleWasPlaceholder = false;
+                state.Restart(at, DateTime.UtcNow);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private void ShowPlaceholderDown(TimerDef def, string corpse)
+    {
+        var next = DateTime.Now.AddSeconds(def.DurationSec);
+        Banner(AlertKind.PlaceholderDown, corpse,
+            $"{def.Name} spawn point reset · next spawn ~{next:t} could be the named (PH cycle {def.PlaceholderCycles})");
     }
 
     private void OnNamedLooted(LedgerEvent e)
@@ -418,12 +466,15 @@ public partial class App : Application
     private void ShowTimerUp(TimerDef def, bool forceSound)
     {
         var alerts = forceSound ? new AlertSettings { SoundOnSpawn = true, SpeakOnSpawn = Settings.Alerts.SpeakOnSpawn } : Settings.Alerts;
-        if (def.AutoCreated)
+        if (def.IsSpawnPoint)
         {
-            // Named respawn timers use the named-mob sound and a "spawn due" banner.
-            Banner(AlertKind.SpawnDue, def.Name, "Respawn window open (predicted from when it was looted)");
+            // The spot can respawn as the named or its placeholder; the Ledger can't tell which.
+            var detail = def.PlaceholderCycles > 0
+                ? $"Named or placeholder · {def.PlaceholderCycles} PH cycle{(def.PlaceholderCycles == 1 ? "" : "s")} since the named"
+                : "Could be the named or its placeholder";
+            Banner(AlertKind.SpawnDue, def.Name, detail);
             var s = Settings.Named;
-            _alerts.Named(forceSound ? new NamedSettings { Sound = true, Speak = s.Speak } : s, $"{def.Name} spawn due");
+            _alerts.Named(forceSound ? new NamedSettings { Sound = true, Speak = s.Speak } : s, $"{def.Name} spawn up");
             return;
         }
         if (Settings.Alerts.BannerOnTimerUp || forceSound) Banner(AlertKind.TimerUp, $"{def.Name} is up", "Spawn timer reached zero");

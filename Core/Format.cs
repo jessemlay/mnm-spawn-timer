@@ -14,6 +14,15 @@ public static class TimeFormat
         return h > 0 ? $"{h}:{m:00}:{s:00}" : $"{m}:{s:00}";
     }
 
+    /// <summary>"just now", "8m ago", "1h 12m ago", "3d ago".</summary>
+    public static string Ago(TimeSpan t)
+    {
+        if (t < TimeSpan.FromMinutes(1)) return "just now";
+        if (t < TimeSpan.FromHours(1)) return $"{(int)t.TotalMinutes}m ago";
+        if (t < TimeSpan.FromHours(48)) return $"{(int)t.TotalHours}h {t.Minutes}m ago";
+        return $"{(int)t.TotalDays}d ago";
+    }
+
     /// <summary>Accepts "400", "6:40" or "1:06:40".</summary>
     public static bool TryParseDuration(string? text, out int seconds)
     {

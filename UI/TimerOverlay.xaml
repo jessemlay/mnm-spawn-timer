@@ -100,6 +100,18 @@
                                         </Border.RenderTransform>
                                     </Border>
                                 </Border>
+                                <TextBlock Text="{Binding HistoryText}" FontSize="10.5" Foreground="#A6FFFFFF" Margin="0,3,0,0"
+                                           TextWrapping="Wrap" MaxWidth="240">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HistoryText}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
 
                             <TextBlock Grid.Column="2" Text="{Binding DisplayText}" FontSize="30" FontWeight="SemiBold"

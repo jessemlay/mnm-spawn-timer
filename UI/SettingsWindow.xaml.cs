@@ -90,6 +90,13 @@ public partial class SettingsWindow : Window
 
     private void ResetSession_Click(object sender, RoutedEventArgs e) => App.Instance.ResetSession();
 
+    private void ResetHistory_Click(object sender, RoutedEventArgs e)
+    {
+        if (TimerListBox.SelectedItem is not TimerDef def) return;
+        def.ResetHistory();
+        QueueApply();
+    }
+
     private void ExportSession_Click(object sender, RoutedEventArgs e) => App.Instance.ExportSession(this);
 
     private void Browse_Click(object sender, RoutedEventArgs e)
