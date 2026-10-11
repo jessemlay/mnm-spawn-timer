@@ -111,7 +111,9 @@ public static class LedgerParser
                 case "act_14":
                     ev.Kind = LedgerKind.CoinLoot;
                     ev.Corpse = NullIfEmpty(Decode(Str(d, "d13")));
-                    ev.CoinTotalCp = Int(d, "d11") ?? ParseCoinCsv(Decode(Str(d, "d12"))) ?? 0;
+                    // Use the coin breakdown (d12). The d11 "total" disagrees with it whenever silver is present
+                    // (1 silver 8 copper is logged as 18), so it's only a fallback.
+                    ev.CoinTotalCp = ParseCoinCsv(Decode(Str(d, "d12"))) ?? Int(d, "d11") ?? 0;
                     ev.CoinKind = Decode(Str(d, "d14"));
                     ev.CoinShareCp = ParseCoinCsv(Decode(Str(d, "d15")));
                     break;
@@ -191,22 +193,19 @@ public static class LedgerParser
         _ => e.Action,
     };
 
-    /// <summary>"pp,gp,sp,cp" to copper.</summary>
-    private static long? ParseCoinCsv(string text)
+    /// <summary>"pp,gp,sp,cp" to copper. Denominations aren't normalized (e.g. "0,0,1,12"), so convert each.</summary>
+    public static long? ParseCoinCsv(string text)
     {
         var parts = text.Split(',');
         if (parts.Length != 4) return null;
-        long total = 0;
-        foreach (var p in parts)
-        {
-            if (!long.TryParse(p.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var n)) return null;
-            total = total * 10 + n;
-        }
-        return total;
+        var n = new long[4];
+        for (var i = 0; i < 4; i++)
+            if (!long.TryParse(parts[i].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out n[i])) return null;
+        return CoinFormat.ToCopper(n[0], n[1], n[2], n[3]);
     }
 
     /// <summary>"0 platinum 1 gold 2 silver 3 copper" to copper.</summary>
-    private static long ParseCoinWords(string text)
+    public static long ParseCoinWords(string text)
     {
         long total = 0;
         foreach (Match m in CoinWords.Matches(text))
@@ -214,9 +213,9 @@ public static class LedgerParser
             var n = long.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
             total += m.Groups[2].Value.ToLowerInvariant() switch
             {
-                "platinum" => n * 1000,
-                "gold" => n * 100,
-                "silver" => n * 10,
+                "platinum" => n * CoinFormat.Platinum,
+                "gold" => n * CoinFormat.Gold,
+                "silver" => n * CoinFormat.Silver,
                 _ => n,
             };
         }

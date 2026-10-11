@@ -35,12 +35,18 @@ public static class TimeFormat
 
 public static class CoinFormat
 {
-    // 10 copper = 1 silver, 10 silver = 1 gold, 10 gold = 1 platinum.
+    // M&M: 100 copper = 1 silver, 100 silver = 1 gold, 100 gold = 1 platinum.
+    public const long Silver = 100;
+    public const long Gold = 100 * Silver;
+    public const long Platinum = 100 * Gold;
+
+    public static long ToCopper(long pp, long gp, long sp, long cp) => pp * Platinum + gp * Gold + sp * Silver + cp;
+
     public static string Format(long copper)
     {
         if (copper <= 0) return "0c";
         var parts = new List<string>(4);
-        long p = copper / 1000, g = copper / 100 % 10, s = copper / 10 % 10, c = copper % 10;
+        long p = copper / Platinum, g = copper / Gold % 100, s = copper / Silver % 100, c = copper % 100;
         if (p > 0) parts.Add($"{p}p");
         if (g > 0) parts.Add($"{g}g");
         if (s > 0) parts.Add($"{s}s");

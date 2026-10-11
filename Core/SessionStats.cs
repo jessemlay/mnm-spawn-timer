@@ -173,7 +173,10 @@ public sealed class SessionStats
             }
         }
         else if (e.Kind == LedgerKind.CoinLoot && !e.IsMine && e.CoinShareCp is > 0
-                 && string.Equals(e.CoinKind, "party_split", StringComparison.OrdinalIgnoreCase))
+                 && string.Equals(e.CoinKind, "party_split", StringComparison.OrdinalIgnoreCase)
+                 // The game splits actual coins, so a lone silver piece lands on one member and skews the ratio.
+                 // Only copper-only piles big enough to divide cleanly give a reliable size.
+                 && e.CoinTotalCp is >= 20 and < CoinFormat.Silver && e.CoinShareCp < CoinFormat.Silver)
         {
             // A groupmate's split shows the real group size: total / per-member share (e.g. 71 / 14 = 5).
             _partySize = (int)Math.Clamp(Math.Round(e.CoinTotalCp / (double)e.CoinShareCp.Value), 1, MaxPartySize);
