@@ -41,6 +41,25 @@ public partial class TimerOverlay : OverlayWindow
         Frame.Background = PanelBrush(EditMode ? System.Math.Max(opacity, 40) : opacity);
     }
 
+    // Row buttons inherit the row's SpawnTimerState as DataContext.
+    private static SpawnTimerState? RowTimer(object sender) =>
+        (sender as FrameworkElement)?.DataContext as SpawnTimerState;
+
+    private void RestartTimer_Click(object sender, RoutedEventArgs e)
+    {
+        if (RowTimer(sender) is { } t) App.Instance.RestartTimer(t);
+    }
+
+    private void ClearTimer_Click(object sender, RoutedEventArgs e)
+    {
+        if (RowTimer(sender) is { } t) App.Instance.ClearTimer(t);
+    }
+
+    private void RemoveTimer_Click(object sender, RoutedEventArgs e)
+    {
+        if (RowTimer(sender) is { } t) App.Instance.RemoveTimer(t.Def);
+    }
+
     private void UpdateEmpty() =>
         EmptyText.Visibility = _timers.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 }

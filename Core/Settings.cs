@@ -205,6 +205,10 @@ public sealed class NamedSettings
     public string IgnoreNames { get; set; } = "";
     public bool AlertOnLoot { get; set; } = true;
     public bool AutoTimers { get; set; } = true;
+
+    /// <summary>Named mobs whose auto-created timer was removed; they still alert but don't get a timer again.</summary>
+    public string NoTimerNames { get; set; } = "";
+
     public int DefaultRespawnSec { get; set; } = 1200;
     public bool Sound { get; set; } = true;
     public bool Speak { get; set; }

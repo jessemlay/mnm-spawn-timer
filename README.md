@@ -47,6 +47,17 @@ Overlays are click-through, so mouse clicks reach the game. To move them, do one
 - **Click the tray icon once** to unlock everything, drag, then click it again to lock.
 - Press the unlock hotkey (Ctrl+Alt+0), or keep the Settings window open.
 
+## Managing timers without leaving the game
+
+Nothing in the app pulls focus from the game: there are no confirmation boxes, and messages appear as overlay banners.
+
+- **While unlocked** (tray click, Ctrl+Alt+0, or holding Ctrl+Shift), each timer row shows **Restart / Clear / Remove** buttons.
+  **Clear** sets it back to READY and forgets the countdown. **Remove** deletes it immediately.
+- **Tray ▸ Timers ▸ <timer>** has the same options.
+- A removed auto-created named timer isn't recreated on the next kill (you still get NAMED DOWN).
+  To undo, delete the name from Settings ▸ Alerts ▸ Named mobs ▸ "Don't create timers for".
+- **Tray ▸ Export session** saves straight to `Documents\Spawn Timer Sessions\` and shows a banner. There's no Save As dialog.
+
 ## Hotkeys (defaults, change them in Settings ▸ Hotkeys)
 
 | Hotkey | Action |

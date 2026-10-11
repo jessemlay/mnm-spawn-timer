@@ -7,7 +7,7 @@ using SpawnTimer.Core;
 
 namespace SpawnTimer.UI;
 
-public enum AlertKind { Drop, NamedDown, SpawnDue, TimerUp, PlaceholderDown }
+public enum AlertKind { Drop, NamedDown, SpawnDue, TimerUp, PlaceholderDown, Info }
 
 public sealed class AlertMessage
 {
@@ -46,6 +46,7 @@ public partial class AlertOverlay : OverlayWindow
             AlertKind.NamedDown => ("NAMED DOWN", Color.FromRgb(0xFF, 0x9F, 0x43)),
             AlertKind.SpawnDue => ("SPAWN UP? · NAMED OR PLACEHOLDER", Color.FromRgb(0xFF, 0x5C, 0x5C)),
             AlertKind.PlaceholderDown => ("PLACEHOLDER DOWN", Color.FromRgb(0x9A, 0xA8, 0xB8)),
+            AlertKind.Info => ("SPAWN TIMER", Color.FromRgb(0xB8, 0xC4, 0xD0)),
             _ => ("TIMER UP", Color.FromRgb(0x7F, 0xD4, 0xFF)),
         };
         var accentBrush = new SolidColorBrush(accent);

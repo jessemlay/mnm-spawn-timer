@@ -52,6 +52,10 @@ public sealed class SpawnTimerState : Observable
     public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
     public bool ShowInOverlay { get => _showInOverlay; set => Set(ref _showInOverlay, value); }
 
+    /// <summary>Show the row's Restart/Clear/Remove buttons (while overlays are unlocked).</summary>
+    public bool ShowControls { get => _showControls; set => Set(ref _showControls, value); }
+    private bool _showControls;
+
     public event Action<SpawnTimerState>? Warned;
     public event Action<SpawnTimerState>? Expired;
 
@@ -211,6 +215,15 @@ public sealed class SpawnTimerState : Observable
                 : $"{Def.PlaceholderCycles} PH since named");
         parts.Add(Def.LastNamedSeenUtc is { } seen ? $"named {TimeFormat.Ago(nowUtc - seen)}" : "named not seen yet");
         return string.Join(" · ", parts);
+    }
+
+    /// <summary>Back to READY and forget the saved countdown (camp history is kept).</summary>
+    public void Reset(DateTime nowUtc)
+    {
+        _phase = TimerPhase.Idle;
+        Def.LastCycleStartUtc = null;
+        Def.LastCycleWasPlaceholder = false;
+        Tick(nowUtc);
     }
 
     /// <summary>Resume a spawn-point countdown saved before the app closed (no alerts for time already passed).</summary>

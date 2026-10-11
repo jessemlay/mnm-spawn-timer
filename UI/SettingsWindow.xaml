@@ -368,6 +368,9 @@
                                               Content="Create a respawn timer for each new named, default respawn" />
                                     <TextBox Width="70" Margin="8,3,0,3" Text="{Binding Named.DefaultRespawnText}" />
                                 </StackPanel>
+                                <TextBlock Margin="0,6,0,2" Text="Don't create timers for these named (removed timers are added here):" />
+                                <TextBox Height="44" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                         Text="{Binding Named.NoTimerNames}" />
                                 <TextBlock Style="{StaticResource Hint}">
                                     The game logs loot, not spawns. When a named respawn timer reaches zero you get a
                                     "spawn due" alert, predicted from when the corpse was looted. Edit each named's real

@@ -69,9 +69,10 @@ public partial class SettingsWindow : Window
     {
         if (TimerListBox.SelectedItem is not TimerDef def) return;
         var index = TimerListBox.SelectedIndex;
-        _settings.Timers.Remove(def);
+        // Same path as the overlay/tray so removed named timers aren't recreated on the next kill.
+        App.Instance.RemoveTimer(def);
+        Rebind();
         TimerListBox.SelectedIndex = Math.Min(index, _settings.Timers.Count - 1);
-        QueueApply();
     }
 
     private void MoveUp_Click(object sender, RoutedEventArgs e) => Move(-1);

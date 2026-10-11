@@ -6,6 +6,33 @@
     <ui:OverlayWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
+        <!-- Small flat buttons shown on each row while the overlay is unlocked. -->
+        <Style x:Key="RowButton" TargetType="Button">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="#33FFFFFF" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                CornerRadius="4" Padding="7,3">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#667FD4FF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#997FD4FF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="LookText" TargetType="TextBlock">
             <Setter Property="Foreground" Value="White" />
             <Style.Triggers>
@@ -81,7 +108,18 @@
                                 <ColumnDefinition Width="14" />
                                 <ColumnDefinition Width="*" MinWidth="110" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0"
+                                        Visibility="{Binding ShowControls, Converter={StaticResource BoolToVis}}">
+                                <Button Style="{StaticResource RowButton}" Content="Restart" Click="RestartTimer_Click"
+                                        ToolTip="Start a full countdown from now" />
+                                <Button Style="{StaticResource RowButton}" Content="Clear" Click="ClearTimer_Click"
+                                        ToolTip="Back to READY and forget the countdown" />
+                                <Button Style="{StaticResource RowButton}" Content="Remove" Click="RemoveTimer_Click"
+                                        ToolTip="Delete this timer (named timers won't be recreated)" />
+                            </StackPanel>
 
                             <TextBlock Text="▶" FontSize="10" VerticalAlignment="Center" Foreground="#7FD4FF"
                                        Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}" />

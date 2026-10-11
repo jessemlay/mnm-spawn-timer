@@ -58,10 +58,18 @@ public partial class App : Application
             return;
         }
 
+        // Never pop a modal box mid-game: log the error and show a banner instead.
         DispatcherUnhandledException += (_, args) =>
         {
-            MessageBox.Show(args.Exception.Message, "Spawn Timer error", MessageBoxButton.OK, MessageBoxImage.Warning);
             args.Handled = true;
+            var log = System.IO.Path.Combine(SettingsStore.Folder, "errors.log");
+            try
+            {
+                System.IO.Directory.CreateDirectory(SettingsStore.Folder);
+                System.IO.File.AppendAllText(log, $"{DateTime.Now:u}  {args.Exception}{Environment.NewLine}{Environment.NewLine}");
+            }
+            catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { }
+            Banner(AlertKind.Info, "Spawn Timer hit an error", $"{args.Exception.Message} (details in %APPDATA%\\SpawnTimer\\errors.log)");
         };
 
         _appStart = DateTimeOffset.Now;
@@ -156,20 +164,65 @@ public partial class App : Application
         if (save) SettingsStore.Save(Settings);
     }
 
+    public void RestartTimer(SpawnTimerState timer)
+    {
+        _activeIndex = Math.Max(0, Timers.IndexOf(timer));
+        timer.Restart(DateTime.UtcNow, DateTime.UtcNow);
+        SettingsStore.Save(Settings);
+        OnTick();
+    }
+
+    /// <summary>Back to READY and forget the running countdown.</summary>
+    public void ClearTimer(SpawnTimerState timer)
+    {
+        timer.Reset(DateTime.UtcNow);
+        SettingsStore.Save(Settings);
+        OnTick();
+    }
+
+    /// <summary>
+    /// Deletes a timer right away (no confirmation: nothing may pull focus from the game).
+    /// A removed auto-created named timer is remembered so the next kill doesn't recreate it.
+    /// </summary>
+    public void RemoveTimer(TimerDef def)
+    {
+        var detail = "Removed with its camp history.";
+        if (def.AutoCreated)
+        {
+            if (!NameMatcher.MatchesAny(def.Name, Settings.Named.NoTimerNames))
+            {
+                Settings.Named.NoTimerNames = string.IsNullOrWhiteSpace(Settings.Named.NoTimerNames)
+                    ? def.Name
+                    : Settings.Named.NoTimerNames.TrimEnd() + Environment.NewLine + def.Name;
+            }
+            detail = "Won't be recreated on the next kill. To undo, delete it from Settings ▸ Alerts ▸ \"Don't create timers for\".";
+        }
+        Settings.Timers.Remove(def);
+        ApplySettings();
+        Banner(AlertKind.Info, $"Timer removed: {def.Name}", detail);
+    }
+
     public void ResetSession()
     {
         Session.Reset();
         _lastMeterRefresh = DateTime.MinValue;
     }
 
+    /// <summary>
+    /// From the Settings window (owner given): Save As dialog, then offer to open the folder.
+    /// From the tray (no owner): no dialogs at all. Saves to Documents\Spawn Timer Sessions and shows a banner,
+    /// so you never have to leave the game.
+    /// </summary>
     public void ExportSession(Window? owner = null)
     {
+        var interactive = owner != null;
         if (Session.Events.Count == 0)
         {
             var reason = Settings.Ledger.Enabled
                 ? "Nothing recorded yet this session. Loot something first."
                 : "Session data comes from the game's Ledger. Turn on Settings ▸ Game data first.";
-            MessageBox.Show(reason, "Export session");
+            if (interactive) MessageBox.Show(owner!, reason, "Export session");
+            else Banner(AlertKind.Info, "Nothing to export", reason);
             return;
         }
 
@@ -183,34 +236,52 @@ public partial class App : Application
             folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         }
 
-        var dialog = new Microsoft.Win32.SaveFileDialog
+        string path;
+        if (interactive)
         {
-            Title = "Export session to CSV",
-            Filter = "CSV file (*.csv)|*.csv",
-            InitialDirectory = folder,
-            FileName = SessionExport.DefaultFileName(Session),
-            AddExtension = true,
-            DefaultExt = ".csv",
-        };
-        var picked = owner == null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
-        if (picked != true) return;
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Export session to CSV",
+                Filter = "CSV file (*.csv)|*.csv",
+                InitialDirectory = folder,
+                FileName = SessionExport.DefaultFileName(Session),
+                AddExtension = true,
+                DefaultExt = ".csv",
+            };
+            if (dialog.ShowDialog(owner) != true) return;
+            path = dialog.FileName;
+        }
+        else
+        {
+            // Unique name so a second export in the same minute doesn't fail on an open/locked file.
+            path = System.IO.Path.Combine(folder, $"MnM session {Session.Start.LocalDateTime:yyyy-MM-dd HHmm} (saved {DateTime.Now:HHmmss}).csv");
+        }
 
         string mobsPath;
         try
         {
-            mobsPath = SessionExport.Write(Session, dialog.FileName);
+            mobsPath = SessionExport.Write(Session, path);
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show($"Couldn't write the file: {ex.Message}\n\nIf it's open in Excel, close it and try again.", "Export session");
+            var msg = $"Couldn't write the file: {ex.Message}. If it's open in Excel, close it and try again.";
+            if (interactive) MessageBox.Show(owner!, msg, "Export session");
+            else Banner(AlertKind.Info, "Export failed", msg);
             return;
         }
 
-        var open = MessageBox.Show(
-            $"Exported {Session.Events.Count} events and {Session.Mobs.Count} mobs:\n\n{dialog.FileName}\n{mobsPath}\n\nOpen the folder?",
+        if (!interactive)
+        {
+            Banner(AlertKind.Info, "Session exported",
+                $"{Session.Events.Count} events, {Session.Mobs.Count} mobs → Documents\\Spawn Timer Sessions\\{System.IO.Path.GetFileName(path)}");
+            return;
+        }
+
+        var open = MessageBox.Show(owner!,
+            $"Exported {Session.Events.Count} events and {Session.Mobs.Count} mobs:\n\n{path}\n{mobsPath}\n\nOpen the folder?",
             "Export session", MessageBoxButton.YesNo, MessageBoxImage.Information);
         if (open == MessageBoxResult.Yes)
-            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
     }
 
     public void TestAlert(AlertKind? kind)
@@ -253,6 +324,7 @@ public partial class App : Application
             t.Tick(now);
             t.IsActive = i == _activeIndex;
             t.ShowInOverlay = !Settings.TimerOverlay.HideIdle || t.IsActive || t.Phase != TimerPhase.Idle || unlocked;
+            t.ShowControls = unlocked;
         }
 
         if (now - _lastMeterRefresh >= TimeSpan.FromSeconds(1) && _meterOverlay is { IsVisible: true })
@@ -425,7 +497,7 @@ public partial class App : Application
         _lastNamedAlert[corpse] = e.Time;
 
         var timer = Settings.Timers.FirstOrDefault(t => t.AutoStart && t.MatchesCorpse(corpse));
-        if (timer == null && Settings.Named.AutoTimers)
+        if (timer == null && Settings.Named.AutoTimers && !NameMatcher.MatchesAny(corpse, Settings.Named.NoTimerNames))
         {
             timer = new TimerDef
             {
@@ -532,6 +604,11 @@ public partial class App : Application
     private void CreateTray()
     {
         var menu = new Forms.ContextMenuStrip();
+        var timersMenu = new Forms.ToolStripMenuItem("Timers");
+        menu.Items.Add(timersMenu);
+        // Rebuilt each time so it always lists the current timers.
+        menu.Opening += (_, _) => BuildTimersMenu(timersMenu);
+        menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Settings…", null, (_, _) => OpenSettings());
         _lockMenuItem = new Forms.ToolStripMenuItem("Unlock overlays (move)", null, (_, _) => SetEditMode(!_editMode));
         menu.Items.Add(_lockMenuItem);
@@ -552,6 +629,26 @@ public partial class App : Application
             if (e.Button == Forms.MouseButtons.Left) SetEditMode(!_editMode);
         };
         _tray.DoubleClick += (_, _) => OpenSettings();
+    }
+
+    private void BuildTimersMenu(Forms.ToolStripMenuItem parent)
+    {
+        parent.DropDownItems.Clear();
+        if (Timers.Count == 0)
+        {
+            parent.DropDownItems.Add(new Forms.ToolStripMenuItem("(no timers)") { Enabled = false });
+            return;
+        }
+        foreach (var timer in Timers.ToList())
+        {
+            var t = timer;
+            var item = new Forms.ToolStripMenuItem($"{t.Name}   {t.DisplayText} {t.StatusText}".TrimEnd());
+            item.DropDownItems.Add("Restart now", null, (_, _) => RestartTimer(t));
+            item.DropDownItems.Add("Clear (back to ready)", null, (_, _) => ClearTimer(t));
+            item.DropDownItems.Add(new Forms.ToolStripSeparator());
+            item.DropDownItems.Add("Remove timer", null, (_, _) => RemoveTimer(t.Def));
+            parent.DropDownItems.Add(item);
+        }
     }
 
     private static Icon MakeTrayIcon()
