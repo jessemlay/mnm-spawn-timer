@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Only for the system-tray NotifyIcon. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>SpawnTimer</AssemblyName>
+    <RootNamespace>SpawnTimer</RootNamespace>
+    <!-- CI appends -ci.N to this; a pushed tag like v1.2.0 sets the full version. -->
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <Product>Spawn Timer for Monsters &amp; Memories</Product>
+  </PropertyGroup>
+
+</Project>

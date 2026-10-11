@@ -1,0 +1,21 @@
+<ui:OverlayWindow x:Class="SpawnTimer.UI.MeterOverlay"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="clr-namespace:SpawnTimer.UI"
+                  Title="Session Meter">
+    <Border x:Name="Frame" CornerRadius="8" Padding="12,8" BorderThickness="2" BorderBrush="Transparent">
+        <Border.LayoutTransform>
+            <ScaleTransform x:Name="Zoom" ScaleX="1" ScaleY="1" />
+        </Border.LayoutTransform>
+        <StackPanel MinWidth="230" MaxWidth="340">
+            <StackPanel.Effect>
+                <DropShadowEffect ShadowDepth="0" BlurRadius="4" Color="Black" Opacity="0.9" />
+            </StackPanel.Effect>
+            <DockPanel Margin="0,0,0,4">
+                <TextBlock x:Name="HeaderRight" DockPanel.Dock="Right" Foreground="#99FFFFFF" FontSize="11" />
+                <TextBlock x:Name="Header" Text="SESSION" Foreground="#7FD4FF" FontSize="11" FontWeight="Bold" />
+            </DockPanel>
+            <StackPanel x:Name="Rows" />
+        </StackPanel>
+    </Border>
+</ui:OverlayWindow>

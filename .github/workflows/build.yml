@@ -1,0 +1,66 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # lets tag builds create a GitHub Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Pick version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            "args=-p:Version=$("${{ github.ref_name }}".TrimStart('v'))" >> $env:GITHUB_OUTPUT
+          } else {
+            "args=-p:VersionSuffix=ci.${{ github.run_number }}" >> $env:GITHUB_OUTPUT
+          }
+
+      # One exe with .NET bundled: runs on any Windows 10/11 PC, no install needed.
+      - name: Publish standalone exe
+        run: >
+          dotnet publish SpawnTimer.csproj -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -p:DebugType=None
+          ${{ steps.version.outputs.args }} -o out/standalone
+
+      # Small exe for PCs that already have the .NET 9 Desktop Runtime.
+      - name: Publish small exe
+        run: >
+          dotnet publish SpawnTimer.csproj -c Release -r win-x64 --self-contained false
+          -p:PublishSingleFile=true -p:DebugType=None
+          ${{ steps.version.outputs.args }} -o out/small
+
+      - name: Collect
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item out/standalone/SpawnTimer.exe dist/SpawnTimer.exe
+          Copy-Item out/small/SpawnTimer.exe dist/SpawnTimer-needs-dotnet9.exe
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpawnTimer-build-${{ github.run_number }}
+          path: dist/*.exe
+
+      - name: Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
+          generate_release_notes: true
