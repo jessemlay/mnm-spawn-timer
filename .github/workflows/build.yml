@@ -25,9 +25,14 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.ref_type }}" -eq "tag") {
-            "args=-p:Version=$("${{ github.ref_name }}".TrimStart('v'))" >> $env:GITHUB_OUTPUT
+            $v = "${{ github.ref_name }}".TrimStart('v')
+            "args=-p:Version=$v" >> $env:GITHUB_OUTPUT
+            "display=$v" >> $env:GITHUB_OUTPUT
+            "numeric=$(($v -split '-')[0]).0" >> $env:GITHUB_OUTPUT
           } else {
             "args=-p:VersionSuffix=ci.${{ github.run_number }}" >> $env:GITHUB_OUTPUT
+            "display=dev-${{ github.run_number }}" >> $env:GITHUB_OUTPUT
+            "numeric=0.0.0.${{ github.run_number }}" >> $env:GITHUB_OUTPUT
           }
 
       # One exe with .NET bundled: runs on any Windows 10/11 PC, no install needed.
@@ -38,7 +43,7 @@ jobs:
           -p:EnableCompressionInSingleFile=true -p:DebugType=None
           ${{ steps.version.outputs.args }} -o out/standalone
 
-      # Small exe for PCs that already have the .NET 9 Desktop Runtime.
+      # Small exe for PCs that already have the .NET 9 Desktop Runtime (also what the installer ships).
       - name: Publish small exe
         run: >
           dotnet publish SpawnTimer.csproj -c Release -r win-x64 --self-contained false
@@ -51,6 +56,36 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item out/standalone/SpawnTimer.exe dist/SpawnTimer.exe
           Copy-Item out/small/SpawnTimer.exe dist/SpawnTimer-needs-dotnet9.exe
+
+      # Installer that downloads and installs the .NET 9 Desktop Runtime if it's missing.
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          }
+          & $iscc /Qp "/DAppVersion=${{ steps.version.outputs.display }}" "/DNumericVersion=${{ steps.version.outputs.numeric }}" `
+            "/DSourceDir=$PWD\out\small" "/DOutputDir=$PWD\dist" installer\SpawnTimer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+
+      # Install silently (forcing the .NET download/install path), check the exe landed, then uninstall.
+      - name: Test installer
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'spawn-timer-install'
+          $log = Join-Path $env:RUNNER_TEMP 'setup.log'
+          $p = Start-Process dist/SpawnTimer-Setup.exe -Wait -PassThru -ArgumentList `
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/FORCEDOTNET=1', "/DIR=$dir", "/LOG=$log"
+          Get-Content $log | Select-String -Pattern 'dotnet|\.NET|Running|exit code|Installation process succeeded|Error' | ForEach-Object { $_.Line }
+          if ($p.ExitCode -ne 0) { throw "Setup exited with $($p.ExitCode)" }
+          if (-not (Test-Path "$dir\SpawnTimer.exe")) { throw 'SpawnTimer.exe was not installed' }
+          if (-not (Select-String -Path $log -Pattern '.NET installer exit code' -Quiet)) { throw '.NET runtime install step did not run' }
+          $u = Start-Process "$dir\unins000.exe" -Wait -PassThru -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          if ($u.ExitCode -ne 0) { throw "Uninstall exited with $($u.ExitCode)" }
+          Start-Sleep -Seconds 3
+          if (Test-Path "$dir\SpawnTimer.exe") { throw 'Uninstall left SpawnTimer.exe behind' }
           Get-ChildItem dist | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v7
