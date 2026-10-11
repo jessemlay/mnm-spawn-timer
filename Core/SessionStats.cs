@@ -28,6 +28,8 @@ public sealed class SessionStats
     private readonly Dictionary<string, MobSummary> _mobs = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<LedgerEvent> _events = new();
     private readonly List<LedgerEvent> _recentLoot = new();
+    private readonly List<(DateTimeOffset Time, double Value)> _coinSamples = new();
+    private readonly List<(DateTimeOffset Time, double Value)> _corpseSamples = new();
     private const int MaxPartySize = 6;
     private static readonly TimeSpan SplitEvidenceWindow = TimeSpan.FromMinutes(15);
     private int _partySize = 1;
@@ -57,6 +59,33 @@ public sealed class SessionStats
 
     public double PerHour(double value) => value / Math.Max(Elapsed.TotalHours, 1.0 / 60);
 
+    /// <summary>Your coin per hour, weighted toward recent loot (see <see cref="RecentRate"/>).</summary>
+    public double CoinPerHour(TimeSpan window, DateTimeOffset now) => RecentRate(_coinSamples, LootCoinCp, window, now);
+
+    /// <summary>Corpses per hour, weighted toward recent kills.</summary>
+    public double CorpsesPerHour(TimeSpan window, DateTimeOffset now) => RecentRate(_corpseSamples, Kills, window, now);
+
+    /// <summary>
+    /// Per-hour rate where each sample's weight decays as e^(-age/window), so the rate follows your current pace
+    /// and fades toward zero when you stop. Normalized by (1 - e^(-elapsed/window)) so it isn't low early in a session,
+    /// and forced to 0 once nothing has happened for 4 windows (~2% left). A zero window gives the whole-session average.
+    /// </summary>
+    private double RecentRate(List<(DateTimeOffset Time, double Value)> samples, double total, TimeSpan window, DateTimeOffset now)
+    {
+        if (window <= TimeSpan.Zero) return PerHour(total);
+        if (samples.Count == 0 || now - samples[^1].Time > window * 4) return 0;
+
+        var tau = window.TotalHours;
+        var weighted = 0.0;
+        foreach (var (time, value) in samples)
+        {
+            if (time > now) continue; // only what had happened by "now"
+            weighted += value * Math.Exp(-(now - time).TotalHours / tau);
+        }
+        var elapsedHours = Math.Max((now - Start).TotalHours, 1.0 / 60);
+        return weighted / (tau * (1 - Math.Exp(-elapsedHours / tau)));
+    }
+
     public IEnumerable<KeyValuePair<string, int>> TopMobs(int count) =>
         _mobs.Values.Where(m => m.Corpses > 0)
             .OrderByDescending(m => m.Corpses).ThenBy(m => m.Name)
@@ -73,6 +102,8 @@ public sealed class SessionStats
         _mobs.Clear();
         _events.Clear();
         _recentLoot.Clear();
+        _coinSamples.Clear();
+        _corpseSamples.Clear();
     }
 
     /// <summary>Current group size estimate (1 when solo).</summary>
@@ -109,6 +140,7 @@ public sealed class SessionStats
                 CountCorpse(e);
                 e.MyCoinCp = MyCoinShare(e);
                 LootCoinCp += e.MyCoinCp;
+                if (e.MyCoinCp > 0) _coinSamples.Add((e.Time, e.MyCoinCp));
                 if (Mob(e) is { } coinMob) coinMob.MyCoinCp += e.MyCoinCp;
                 break;
 
@@ -205,6 +237,7 @@ public sealed class SessionStats
         {
             Kills++;
             Mob(e)!.Corpses++;
+            _corpseSamples.Add((e.Time, 1));
         }
         _lastCorpseEvent[e.Corpse] = e.Time;
     }

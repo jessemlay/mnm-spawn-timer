@@ -167,6 +167,12 @@ public sealed class MeterSettings
     public int TopMobsCount { get; set; } = 5;
     public bool ShowRecentLoot { get; set; } = true;
     public int RecentLootCount { get; set; } = 5;
+
+    /// <summary>Recent loot drops off the meter after this many minutes; 0 = keep showing it.</summary>
+    public int RecentLootMinutes { get; set; } = 15;
+
+    /// <summary>Per-hour rates follow the last ~N minutes and fade to 0 when you stop; 0 = whole-session average.</summary>
+    public int RateWindowMinutes { get; set; } = 10;
 }
 
 public sealed class LedgerSettings

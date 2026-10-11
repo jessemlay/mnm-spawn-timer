@@ -46,15 +46,23 @@ public partial class MeterOverlay : OverlayWindow
             AddNote("Waiting for loot…");
         }
 
+        // Rates follow your recent pace and fade to 0 when you stop (RateWindowMinutes; 0 = session average).
+        // The first few minutes swing wildly, so wait before showing one.
+        var now = DateTimeOffset.Now;
+        var window = TimeSpan.FromMinutes(Math.Max(0, meter.RateWindowMinutes));
+        var warmingUp = stats.Elapsed < TimeSpan.FromMinutes(5);
+
         if (meter.ShowZone && stats.Zone.Length > 0) AddRow("Zone", PrettyZone(stats.Zone));
         if (meter.ShowKills)
-            AddRow("Corpses looted", meter.ShowKillRate ? $"{stats.Kills}   ({stats.PerHour(stats.Kills):0}/hr)" : $"{stats.Kills}");
+        {
+            var killRate = warmingUp ? "(…/hr)" : $"({stats.CorpsesPerHour(window, now):0}/hr)";
+            AddRow("Corpses looted", meter.ShowKillRate ? $"{stats.Kills}   {killRate}" : $"{stats.Kills}");
+        }
         if (meter.ShowCoin)
         {
-            // Rates over the first few minutes swing wildly, so wait before showing one.
-            var rate = stats.Elapsed < TimeSpan.FromMinutes(5)
+            var rate = warmingUp
                 ? "(…/hr)"
-                : $"({CoinFormat.Format((long)stats.PerHour(stats.LootCoinCp))}/hr)";
+                : $"({CoinFormat.Format((long)Math.Round(stats.CoinPerHour(window, now)))}/hr)";
             var label = stats.PartySize > 1 ? $"Coin looted ({stats.PartySize}-way)" : "Coin looted";
             AddRow(label, meter.ShowCoinRate ? $"{CoinFormat.Format(stats.LootCoinCp)}   {rate}" : CoinFormat.Format(stats.LootCoinCp));
         }
@@ -72,14 +80,23 @@ public partial class MeterOverlay : OverlayWindow
             }
         }
 
-        if (meter.ShowRecentLoot && meter.RecentLootCount > 0 && stats.RecentLoot.Count > 0)
+        if (meter.ShowRecentLoot && meter.RecentLootCount > 0)
         {
-            AddSection("RECENT LOOT");
-            foreach (var loot in stats.RecentLoot.Take(meter.RecentLootCount))
+            // Loot drops off after RecentLootMinutes so the list doesn't linger once you stop (0 = keep it).
+            var maxAge = TimeSpan.FromMinutes(Math.Max(0, meter.RecentLootMinutes));
+            var recent = stats.RecentLoot
+                .Where(l => maxAge == TimeSpan.Zero || now - l.Time <= maxAge)
+                .Take(meter.RecentLootCount)
+                .ToList();
+            if (recent.Count > 0)
             {
-                var qty = loot.Quantity > 1 ? $" ×{loot.Quantity}" : "";
-                var who = loot.IsMine ? "" : $" · {loot.Actor}";
-                AddLine($"{loot.Item}{qty}", $"{loot.Corpse}{who}");
+                AddSection("RECENT LOOT");
+                foreach (var loot in recent)
+                {
+                    var qty = loot.Quantity > 1 ? $" ×{loot.Quantity}" : "";
+                    var who = loot.IsMine ? "" : $" · {loot.Actor}";
+                    AddLine($"{loot.Item}{qty}", $"{loot.Corpse}{who} · {TimeFormat.Ago(now - loot.Time)}");
+                }
             }
         }
     }

@@ -85,7 +85,9 @@ Names and zones are base64-encoded. With **Game data** on, Spawn Timer reads (ne
 once a second and enables:
 
 - **Auto-restart**: a timer restarts when a corpse matching its mob names is looted. Use `a skeletal*` for prefixes.
-- **Session meter**: zone, corpses looted (per hour is optional), coin looted (your share) and per hour,
+- **Session meter**: zone, corpses looted (per hour is optional), coin looted (your share) and per hour.
+  Per-hour rates follow your recent pace (last ~10 minutes, adjustable), fade when you stop looting, and reach 0
+  after about 40 minutes without loot. Recent loot entries show their age and drop off after 15 minutes (adjustable). Other rows:
   items looted, levels gained, top mobs, recent loot (including party members' loot). Every row is optional.
 - **Item drop alerts**: a banner and sound when a listed item is looted by you or your party.
   Patterns: `Exact Name`, `Head of*`, `*Longbow`, `*Bloodynose*`.

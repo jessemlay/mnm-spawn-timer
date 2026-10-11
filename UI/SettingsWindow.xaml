@@ -264,7 +264,19 @@
                                 <StackPanel Orientation="Horizontal">
                                     <CheckBox IsChecked="{Binding Meter.ShowRecentLoot}" Content="Recent loot, show" Width="150" />
                                     <TextBox Width="44" Text="{Binding Meter.RecentLootCount}" />
+                                    <TextBlock Text="for" VerticalAlignment="Center" Margin="6,0,6,0" />
+                                    <TextBox Width="44" Text="{Binding Meter.RecentLootMinutes}" />
+                                    <TextBlock Text="minutes (0 = always)" VerticalAlignment="Center" Margin="6,0,0,0" />
                                 </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <TextBlock Text="Per-hour rates follow the last" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBox Width="44" Text="{Binding Meter.RateWindowMinutes}" />
+                                    <TextBlock Text="minutes" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource Hint}">
+                                    Rates fade when you stop looting and reach 0 after about 4× this long with no loot.
+                                    0 = whole-session average.
+                                </TextBlock>
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                     <Button Content="Export session to CSV…" Click="ExportSession_Click" />
                                     <Button Content="Reset session" Click="ResetSession_Click" />
