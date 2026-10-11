@@ -35,29 +35,14 @@ jobs:
             "numeric=0.0.0.${{ github.run_number }}" >> $env:GITHUB_OUTPUT
           }
 
-      # One exe with .NET bundled: runs on any Windows 10/11 PC, no install needed.
-      - name: Publish standalone exe
-        run: >
-          dotnet publish SpawnTimer.csproj -c Release -r win-x64 --self-contained true
-          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:EnableCompressionInSingleFile=true -p:DebugType=None
-          ${{ steps.version.outputs.args }} -o out/standalone
-
-      # Small exe for PCs that already have the .NET 9 Desktop Runtime (also what the installer ships).
-      - name: Publish small exe
+      # Small framework-dependent exe; only used as the installer's payload, not published on its own.
+      - name: Publish app
         run: >
           dotnet publish SpawnTimer.csproj -c Release -r win-x64 --self-contained false
           -p:PublishSingleFile=true -p:DebugType=None
           ${{ steps.version.outputs.args }} -o out/small
 
-      - name: Collect
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item out/standalone/SpawnTimer.exe dist/SpawnTimer.exe
-          Copy-Item out/small/SpawnTimer.exe dist/SpawnTimer-needs-dotnet9.exe
-
-      # Installer that downloads and installs the .NET 9 Desktop Runtime if it's missing.
+      # The installer is the only thing published: it also installs the .NET 9 Desktop Runtime if missing.
       - name: Build installer
         shell: pwsh
         run: |
@@ -91,12 +76,12 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: SpawnTimer-build-${{ github.run_number }}
-          path: dist/*.exe
+          name: SpawnTimer-Setup-${{ steps.version.outputs.display }}
+          path: dist/SpawnTimer-Setup.exe
 
       - name: Release (tags only)
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/*.exe
+          files: dist/SpawnTimer-Setup.exe
           generate_release_notes: true
