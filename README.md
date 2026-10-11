@@ -63,7 +63,7 @@ Nothing in the app pulls focus from the game: there are no confirmation boxes, a
 Press **Ctrl+Alt+I** (changeable) in game and start typing an item name. The game keeps focus: while the box is open
 your keys go to the search instead of the game, and Alt/Win shortcuts like Alt+Tab still work.
 
-- Results list drops from **your current zone first** (★), then all ~5,200 wiki items.
+- With the box empty you get **every drop in your current zone**. Typing searches all ~5,200 wiki items, with your zone's drops first (★). The list scrolls: **↑/↓**, **PgUp/PgDn**, or the mouse wheel.
 - Faint **autocomplete** text shows the best match: **Tab** takes it, **↑/↓** move, **Enter** fills in the highlighted
   item, **Backspace** (Ctrl = whole word), **Esc** clears, then closes.
 - The highlighted item's **stat card** shows slot, AC, damage/delay, stats, resists, effect, classes, races,

@@ -17,7 +17,12 @@ public sealed class ItemLookupView
     public string ZoneLabel { get; init; } = "";
     public string Hint { get; init; } = "";
     public IReadOnlyList<(string Title, string Tag)> Results { get; init; } = Array.Empty<(string, string)>();
+    /// <summary>Index within <see cref="Results"/> (the visible window), or -1.</summary>
     public int Selected { get; init; } = -1;
+    public int HiddenAbove { get; init; }
+    public int HiddenBelow { get; init; }
+    /// <summary>e.g. "13 of 34" when the list scrolls.</summary>
+    public string Position { get; init; } = "";
     public ItemDetails? Details { get; init; }
     public string CardMessage { get; init; } = "";
     public string YourClass { get; init; } = "";
@@ -38,10 +43,20 @@ public partial class ItemSearchOverlay : OverlayWindow
     public ItemSearchOverlay()
     {
         InitializeComponent();
+        // Wheel over the list scrolls it (positive = up). The panel has a transparent background so the gaps catch it too.
+        Results.Background = Brushes.Transparent;
+        Results.MouseWheel += (_, e) =>
+        {
+            e.Handled = true;
+            Scrolled?.Invoke(e.Delta / 120);
+        };
     }
 
-    /// <summary>Raised when a result row is clicked.</summary>
+    /// <summary>Raised when a result row is clicked (index within the visible rows).</summary>
     public event Action<int>? RowClicked;
+
+    /// <summary>Raised on mouse wheel over the list, in notches (positive = up).</summary>
+    public event Action<int>? Scrolled;
 
     public void ApplyAppearance(OverlaySettings settings)
     {
@@ -58,6 +73,7 @@ public partial class ItemSearchOverlay : OverlayWindow
         Hint.Text = view.Hint;
 
         Results.Children.Clear();
+        if (view.HiddenAbove > 0) Results.Children.Add(MoreLine($"▲ {view.HiddenAbove} more", ""));
         for (var i = 0; i < view.Results.Count; i++)
         {
             var (title, tag) = view.Results[i];
@@ -83,8 +99,20 @@ public partial class ItemSearchOverlay : OverlayWindow
             };
             Results.Children.Add(row);
         }
+        if (view.HiddenBelow > 0 || view.Position.Length > 0)
+            Results.Children.Add(MoreLine(view.HiddenBelow > 0 ? $"▼ {view.HiddenBelow} more" : "", view.Position));
 
         RenderCard(view);
+    }
+
+    private static DockPanel MoreLine(string left, string right)
+    {
+        var dock = new DockPanel { Margin = new Thickness(6, 2, 6, 2) };
+        var r = new TextBlock { Text = right, Foreground = Dim, FontSize = 10.5 };
+        DockPanel.SetDock(r, Dock.Right);
+        dock.Children.Add(r);
+        dock.Children.Add(new TextBlock { Text = left, Foreground = Accent, FontSize = 10.5 });
+        return dock;
     }
 
     private void RenderCard(ItemLookupView view)

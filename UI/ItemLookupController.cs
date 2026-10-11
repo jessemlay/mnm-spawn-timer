@@ -19,8 +19,10 @@ namespace SpawnTimer.UI;
 /// </summary>
 public sealed class ItemLookupController
 {
-    private const int MaxResults = 8;
+    private const int MaxResults = 250;  // enough for every drop in a zone; the list scrolls
+    private const int VisibleRows = 10;
     private const int MaxLength = 48;
+    private int _scroll;                 // index of the first visible result
 
     private readonly AppSettings _settings;
     private readonly ItemSearchOverlay _overlay;
@@ -46,8 +48,14 @@ public sealed class ItemLookupController
         _overlay = new ItemSearchOverlay();
         _overlay.RowClicked += i =>
         {
-            _selected = i;
+            _selected = _scroll + i; // rows are numbered within the visible window
             Refresh(scheduleDetails: true);
+        };
+        _overlay.Scrolled += notches =>
+        {
+            // Mouse wheel scrolls the list (3 rows per notch) without changing the highlighted item.
+            _scroll = Math.Clamp(_scroll - notches * 3, 0, Math.Max(0, _results.Count - VisibleRows));
+            Render();
         };
         _detailsDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
         _detailsDebounce.Tick += async (_, _) =>
@@ -153,6 +161,8 @@ public sealed class ItemLookupController
                 break;
             case 0x26: Move(-1); return Refreshed(true); // Up
             case 0x28: Move(1); return Refreshed(true);  // Down
+            case 0x21: Page(-1); return Refreshed(true); // Page Up
+            case 0x22: Page(1); return Refreshed(true);  // Page Down
             case 0x08: // Backspace (Ctrl: whole word)
                 if (_text.Length > 0)
                 {
@@ -187,7 +197,21 @@ public sealed class ItemLookupController
     private void Move(int delta)
     {
         if (_results.Count == 0) return;
-        _selected = (_selected + delta + _results.Count) % _results.Count;
+        _selected = (_selected + delta + _results.Count) % _results.Count; // wraps top <-> bottom
+    }
+
+    private void Page(int direction)
+    {
+        if (_results.Count == 0) return;
+        _selected = Math.Clamp(_selected + direction * VisibleRows, 0, _results.Count - 1);
+    }
+
+    /// <summary>Scrolls just enough to keep the highlighted row on screen.</summary>
+    private void KeepSelectionVisible()
+    {
+        if (_selected < _scroll) _scroll = _selected;
+        else if (_selected >= _scroll + VisibleRows) _scroll = _selected - VisibleRows + 1;
+        _scroll = Math.Clamp(_scroll, 0, Math.Max(0, _results.Count - VisibleRows));
     }
 
     private static string? KeyChar(int vk, bool shift) => vk switch
@@ -208,6 +232,8 @@ public sealed class ItemLookupController
         var index = ItemDb.Index ?? (IReadOnlyList<string>)Array.Empty<string>();
         _results = ItemSearch.Find(_text, index, _zoneItems, MaxResults);
         _selected = _results.Count == 0 ? 0 : Math.Clamp(_selected, 0, _results.Count - 1);
+        if (_selected == 0) _scroll = 0;
+        KeepSelectionVisible();
         _ghost = ItemSearch.Completion(_text, _results);
 
         if (_results.Count == 0)
@@ -234,16 +260,20 @@ public sealed class ItemLookupController
         var hint = _status.Length > 0
             ? _status
             : _text.Length == 0 && _zoneItems.Count > 0
-                ? $"Drops in {_zoneName} · type to search all items · ↑↓ · Tab complete · Esc close"
-                : "Type to search · ↑↓ select · Tab complete · Esc close";
+                ? $"All {_zoneItems.Count} drops in {_zoneName} · type to search every item · ↑↓ PgUp/PgDn · Esc close"
+                : "Type to search · ↑↓ PgUp/PgDn · Tab complete · Esc close";
+        var visible = _results.Skip(_scroll).Take(VisibleRows).ToList();
         _overlay.Render(new ItemLookupView
         {
             Typed = _text,
             Ghost = _ghost,
             ZoneLabel = _zoneName,
             Hint = hint,
-            Results = _results.Select(r => (r, Tag(r))).ToList(),
-            Selected = _selected,
+            Results = visible.Select(r => (r, Tag(r))).ToList(),
+            Selected = _selected - _scroll,
+            HiddenAbove = _scroll,
+            HiddenBelow = Math.Max(0, _results.Count - _scroll - visible.Count),
+            Position = _results.Count > VisibleRows ? $"{_selected + 1} of {_results.Count}" : "",
             Details = _details,
             CardMessage = _cardMessage,
             YourClass = _settings.ItemLookup.YourClass?.Trim() ?? "",
@@ -252,8 +282,11 @@ public sealed class ItemLookupController
 
     private string Tag(string title)
     {
-        if (_zoneItems.Contains(title)) return "★ " + _zoneName;
-        return ItemDb.TryGetCached(title)?.Slot ?? "";
+        var slot = ItemDb.TryGetCached(title)?.Slot ?? "";
+        if (!_zoneItems.Contains(title)) return slot;
+        // Browsing the zone's own list: every row is a zone drop, so the slot says more than the star.
+        if (_text.Length == 0) return slot.Length > 0 ? slot : "★";
+        return "★ " + _zoneName;
     }
 
     private async Task LoadSelectedDetailsAsync()
