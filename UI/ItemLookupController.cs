@@ -25,6 +25,9 @@ public sealed class ItemLookupController
     private readonly AppSettings _settings;
     private readonly ItemSearchOverlay _overlay;
     private readonly DispatcherTimer _detailsDebounce;
+    private readonly DispatcherTimer _focusWatch;
+    /// <summary>The window in front when the lookup opened (normally the game); keys are only taken while it stays in front.</summary>
+    private IntPtr _ownerWindow;
     private HashSet<string> _zoneItems = new(StringComparer.OrdinalIgnoreCase);
     private string _zoneName = "";
     private string _zoneCode = "";
@@ -52,6 +55,19 @@ public sealed class ItemLookupController
             _detailsDebounce.Stop();
             await LoadSelectedDetailsAsync();
         };
+
+        // Close as soon as another window comes to the front (clicked another app, Alt+Tab…).
+        _focusWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _focusWatch.Tick += (_, _) =>
+        {
+            if (IsOpen && LeftOwnerWindow()) Close();
+        };
+    }
+
+    private bool LeftOwnerWindow()
+    {
+        var front = SpawnTimer.Native.NativeMethods.GetForegroundWindow();
+        return front != IntPtr.Zero && front != _ownerWindow;
     }
 
     public bool IsOpen { get; private set; }
@@ -77,6 +93,8 @@ public sealed class ItemLookupController
     {
         if (IsOpen) return;
         IsOpen = true;
+        _ownerWindow = SpawnTimer.Native.NativeMethods.GetForegroundWindow();
+        _focusWatch.Start();
         _text = "";
         _selected = 0;
         _details = null;
@@ -92,6 +110,7 @@ public sealed class ItemLookupController
     {
         if (!IsOpen) return;
         IsOpen = false;
+        _focusWatch.Stop();
         _detailsDebounce.Stop();
         _overlay.EditMode = false;
         _overlay.Hide();
@@ -105,6 +124,12 @@ public sealed class ItemLookupController
     public bool HandleKey(int vk, ModifierKeys mods)
     {
         if (!IsOpen) return false;
+        // Another app is in front: never swallow its keys; close (after the hook returns) and let the key through.
+        if (LeftOwnerWindow())
+        {
+            _overlay.Dispatcher.BeginInvoke(Close, DispatcherPriority.Input);
+            return false;
+        }
         if (mods.HasFlag(ModifierKeys.Alt) || mods.HasFlag(ModifierKeys.Windows)) return false;
         var ctrl = mods.HasFlag(ModifierKeys.Control);
         var shift = mods.HasFlag(ModifierKeys.Shift);

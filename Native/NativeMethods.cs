@@ -77,4 +77,7 @@ internal static class NativeMethods
     }
 
     public static bool IsDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
 }
