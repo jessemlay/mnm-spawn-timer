@@ -67,7 +67,7 @@ your keys go to the search instead of the game, and Alt/Win shortcuts like Alt+T
 - Faint **autocomplete** text shows the best match: **Tab** takes it, **↑/↓** move, **Enter** fills in the highlighted
   item, **Backspace** (Ctrl = whole word), **Esc** clears, then closes.
 - The highlighted item's **stat card** shows slot, AC, damage/delay, stats, resists, effect, classes, races,
-  weight/size and where it drops. Set **your class** (e.g. `CLR`) in Settings ▸ Overlays to get ✓ usable / ✗ not usable.
+  weight/size and where it drops, plus an **Open on M&M Wiki ↗** link (or **Ctrl+O**) that opens the item's page in your browser. Set **your class** (e.g. `CLR`) in Settings ▸ Overlays to get ✓ usable / ✗ not usable.
 - When the app sees you've entered a zone (from your loot), it **preloads that zone's items** in the background,
   so lookups there are instant.
 

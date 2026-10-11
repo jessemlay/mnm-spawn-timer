@@ -72,6 +72,10 @@ public static class ItemDb
         return client;
     }
 
+    /// <summary>The item's page on the M&M Wiki, e.g. https://monstersandmemories.miraheze.org/wiki/Hadhraman%27s_Maul.</summary>
+    public static string WikiUrl(string title) =>
+        "https://monstersandmemories.miraheze.org/wiki/" + Uri.EscapeDataString(title.Trim().Replace(' ', '_'));
+
     /// <summary>All item page titles (cached 7 days). Null until loaded.</summary>
     public static IReadOnlyList<string>? Index => _index;
 

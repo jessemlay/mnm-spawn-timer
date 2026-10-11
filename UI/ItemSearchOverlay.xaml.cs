@@ -58,6 +58,9 @@ public partial class ItemSearchOverlay : OverlayWindow
     /// <summary>Raised on mouse wheel over the list, in notches (positive = up).</summary>
     public event Action<int>? Scrolled;
 
+    /// <summary>Raised when the card's "Open on M&amp;M Wiki" link is clicked, with the wiki page title.</summary>
+    public event Action<string>? OpenSourceClicked;
+
     public void ApplyAppearance(OverlaySettings settings)
     {
         _settings = settings;
@@ -185,7 +188,24 @@ public partial class ItemSearchOverlay : OverlayWindow
         }
 
         AddGap();
-        AddLine("M&M Wiki (CC BY-SA 4.0)", Dim, 9.5);
+        var link = new TextBlock
+        {
+            Text = "Open on M&M Wiki ↗",
+            Foreground = Accent,
+            FontSize = 12,
+            TextDecorations = TextDecorations.Underline,
+            Cursor = Cursors.Hand,
+            ToolTip = "Open this item's wiki page in your browser (Ctrl+O)",
+            Margin = new Thickness(0, 1, 0, 0),
+        };
+        var title = d.Title;
+        link.MouseLeftButtonDown += (_, e) =>
+        {
+            e.Handled = true; // a click, not a window drag
+            OpenSourceClicked?.Invoke(title);
+        };
+        Card.Children.Add(link);
+        AddLine("M&M Wiki on Miraheze (CC BY-SA 4.0) · Ctrl+O", Dim, 9.5);
     }
 
     private void AddClassLine(string classes, string yourClass)

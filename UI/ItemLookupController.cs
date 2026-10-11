@@ -51,6 +51,7 @@ public sealed class ItemLookupController
             _selected = _scroll + i; // rows are numbered within the visible window
             Refresh(scheduleDetails: true);
         };
+        _overlay.OpenSourceClicked += OpenSourcePage;
         _overlay.Scrolled += notches =>
         {
             // Mouse wheel scrolls the list (3 rows per notch) without changing the highlighted item.
@@ -70,6 +71,16 @@ public sealed class ItemLookupController
         {
             if (IsOpen && LeftOwnerWindow()) Close();
         };
+    }
+
+    /// <summary>Opens the item's wiki page in the default browser (the lookup then closes as the browser comes forward).</summary>
+    private static void OpenSourcePage(string title)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ItemDb.WikiUrl(title)) { UseShellExecute = true });
+        }
+        catch (System.ComponentModel.Win32Exception) { }
     }
 
     private bool LeftOwnerWindow()
@@ -176,6 +187,13 @@ public sealed class ItemLookupController
                 }
                 break;
             case 0x2E: _text = ""; break; // Delete clears
+            case 0x4F when ctrl: // Ctrl+O: open the highlighted item's wiki page
+                if (_results.Count > 0)
+                {
+                    var title = _results[Math.Clamp(_selected, 0, _results.Count - 1)];
+                    _overlay.Dispatcher.BeginInvoke(() => OpenSourcePage(title), DispatcherPriority.Input);
+                }
+                return true;
             default:
                 if (ctrl) return true; // swallow Ctrl combos so they don't reach the game
                 var ch = KeyChar(vk, shift);
