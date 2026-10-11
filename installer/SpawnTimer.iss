@@ -77,6 +77,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; runasoriginaluser: don't start the overlay elevated just because setup was.
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
   Flags: nowait postinstall skipifsilent runasoriginaluser
+; In-app updates run setup with /SILENT /RELAUNCH=1: restart the app afterwards.
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: ShouldRelaunch
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe}"; Flags: runhidden; RunOnceId: "StopSpawnTimer"
@@ -85,6 +87,11 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe}"; Flags: runhidden
 var
   DownloadPage: TDownloadWizardPage;
   DotNetDone: Boolean; { set once the runtime installer has run, so it never runs twice }
+
+function ShouldRelaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+end;
 
 function ForceDotNet: Boolean;
 begin

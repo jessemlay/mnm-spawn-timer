@@ -230,8 +230,21 @@ public sealed class NamedSettings
     }
 }
 
+public sealed class UpdateSettings
+{
+    /// <summary>Look for a newer release on startup and every few hours.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>Install a found update automatically, but only at app startup (never mid-session).</summary>
+    public bool InstallAutomatically { get; set; } = true;
+
+    /// <summary>Latest version already announced with a banner, so it isn't repeated every check.</summary>
+    public string LastAnnouncedVersion { get; set; } = "";
+}
+
 public sealed class AppSettings
 {
+    public UpdateSettings Updates { get; set; } = new();
     public ObservableCollection<TimerDef> Timers { get; set; } = new();
     public HotkeySettings Hotkeys { get; set; } = new();
     public OverlaySettings TimerOverlay { get; set; } = new();
@@ -249,18 +262,39 @@ public static class SettingsStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
+    /// <summary>
+    /// Documents\Spawn Timer. Not under AppData on purpose: Windows redirects AppData writes for apps launched from
+    /// sandboxed (MSIX-packaged) programs, which split settings into two copies. Documents is never redirected, and
+    /// installs/updates never touch it.
+    /// </summary>
     public static string Folder =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpawnTimer");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Spawn Timer");
 
     public static string FilePath => Path.Combine(Folder, "settings.json");
+
+    /// <summary>Where versions before 1.4.0 kept settings.</summary>
+    public static string LegacyFilePath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpawnTimer", "settings.json");
+
+    /// <summary>Machine-local cache (zone drop data etc.); losing it only costs a re-download.</summary>
+    public static string CacheFolder =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpawnTimer");
 
     public static AppSettings Load()
     {
         AppSettings? settings = null;
         try
         {
+            Directory.CreateDirectory(Folder);
+            // One-time move from the old AppData location.
+            if (!File.Exists(FilePath) && File.Exists(LegacyFilePath))
+                File.Copy(LegacyFilePath, FilePath);
             if (File.Exists(FilePath))
+            {
+                // Keep the previous session's settings as a one-step undo.
+                File.Copy(FilePath, FilePath + ".bak", overwrite: true);
                 settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), Options);
+            }
         }
         catch (Exception)
         {
@@ -279,6 +313,7 @@ public static class SettingsStore
         settings.DropAlerts ??= new DropAlertSettings();
         settings.Named ??= new NamedSettings();
         settings.AlertOverlay ??= new OverlaySettings { BackgroundOpacity = 75 };
+        settings.Updates ??= new UpdateSettings();
         if (settings.Timers.Count == 0) settings.Timers.Add(new TimerDef());
 
         // Guard against duplicate ids from hand-edited files.

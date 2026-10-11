@@ -19,7 +19,7 @@ Download **`SpawnTimer-Setup.exe`** (~2 MB) and run it. The installer:
 - upgrades in place when you run a newer one, keeping your settings
 
 Windows may show a SmartScreen warning because the installer isn't code-signed: click **More info ▸ Run anyway**.
-Settings live in `%APPDATA%\SpawnTimer` and are left in place when you uninstall.
+Settings live in `Documents\Spawn Timer\settings.json` (with a `.bak` of the previous session). Installs, updates and uninstalls never touch them. Versions before 1.4.0 used `%APPDATA%\SpawnTimer`; that file is copied over automatically the first time.
 The app lives in the system tray: right-click for Settings, Unlock/Lock overlays, Export, Reset session or Exit.
 
 ## Build it yourself
@@ -118,7 +118,7 @@ It picks the zone you're in, using the Ledger zone code (e.g. `telekir` becomes 
 | [M&M Wiki on Miraheze](https://monstersandmemories.miraheze.org/) | MediaWiki API: the zone page's NPC and Items tables (one request per zone) | CC BY-SA 4.0 |
 | [MnM Drops](https://mnmdrops.com/zones) | Public HTML: the zone page plus one page per mob, spaced 1 s apart | robots.txt allows /zones and /mobs |
 
-The first load of a zone takes about 25 s and is then cached for 7 days in `%APPDATA%\SpawnTimer\zone-cache\`.
+The first load of a zone takes about 25 s and is then cached for 7 days in `%LOCALAPPDATA%\SpawnTimer\zone-cache\`.
 Tick "Re-download" to refresh it. Gear from named mobs is ticked by default. Items already in your list are greyed out.
 monstersandmemories.wiki is deliberately not used: its robots.txt and copyright page forbid bulk scraping.
 
@@ -146,7 +146,7 @@ ledger files counts. Timers and hotkeys don't read anything from the game.
 
 ## Files
 
-- Settings: `%APPDATA%\SpawnTimer\settings.json`
+- Settings: `Documents\Spawn Timer\settings.json`
 - `Native/`: overlay window styles and the keyboard hook
 - `Core/`: timers, Ledger parsing, session stats, alerts
 - `UI/`: overlays and the Settings window

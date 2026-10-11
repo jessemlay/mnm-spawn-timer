@@ -18,6 +18,8 @@ public partial class SettingsWindow : Window
     public SettingsWindow(AppSettings settings)
     {
         InitializeComponent();
+        Title = $"Spawn Timer {Updates.CurrentVersion} · Settings";
+        SettingsPathText.Text = SettingsStore.FilePath;
         _settings = settings;
         DataContext = settings;
         TimerListBox.SelectedIndex = 0;
@@ -54,8 +56,21 @@ public partial class SettingsWindow : Window
         _applyDebounce.Start();
     }
 
-    private void UpdateStatus() =>
+    private void UpdateStatus()
+    {
         LedgerStatus.Text = _settings.Ledger.Enabled ? App.Instance.LedgerStatus : "Off";
+        UpdateStatusText.Text = App.Instance.UpdateStatus;
+    }
+
+    private void OpenSettingsFolder_Click(object sender, RoutedEventArgs e) =>
+        System.Diagnostics.Process.Start("explorer.exe", $"\"{SettingsStore.Folder}\"");
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateStatusText.Text = "Checking…";
+        await App.Instance.CheckForUpdatesNow();
+        UpdateStatus();
+    }
 
     private void AddTimer_Click(object sender, RoutedEventArgs e)
     {

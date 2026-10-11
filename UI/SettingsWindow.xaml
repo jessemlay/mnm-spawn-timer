@@ -418,6 +418,37 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
+            <!-- UPDATES -->
+            <TabItem Header="Updates">
+                <StackPanel Margin="10">
+                    <CheckBox IsChecked="{Binding Updates.CheckForUpdates}"
+                              Content="Check for updates when the app starts and every 6 hours" />
+                    <CheckBox IsChecked="{Binding Updates.InstallAutomatically}" Margin="0,4,0,0"
+                              Content="Install updates automatically when the app starts" />
+                    <TextBlock Style="{StaticResource Hint}" Margin="22,2,0,0">
+                        Updates only auto-install at startup, never in the middle of a session. Windows asks for admin
+                        permission once, then the app restarts on the new version with your settings. Updates found
+                        later show a banner and a tray item ("Install update") instead.
+                    </TextBlock>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button Content="Check now" Click="CheckUpdates_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="UpdateStatusText" Margin="0,8,0,0" TextWrapping="Wrap" />
+
+                    <TextBlock Style="{StaticResource Hint}" Margin="0,14,0,0">
+                        Updates come only from the GitHub releases of jessemlay/mnm-spawn-timer over HTTPS, and the installer
+                        is checked against the SHA-256 checksum GitHub publishes before it runs.
+                    </TextBlock>
+
+                    <TextBlock Margin="0,18,0,2" FontWeight="SemiBold" Text="Your settings" />
+                    <TextBlock x:Name="SettingsPathText" TextWrapping="Wrap" FontSize="12" />
+                    <TextBlock Style="{StaticResource Hint}">
+                        Kept across reinstalls and updates. settings.json.bak next to it is the previous session's copy.
+                    </TextBlock>
+                    <Button Content="Open settings folder" HorizontalAlignment="Left" Margin="0,6,0,0" Click="OpenSettingsFolder_Click" />
+                </StackPanel>
+            </TabItem>
         </TabControl>
     </DockPanel>
 </Window>

@@ -36,7 +36,7 @@ public static class ZoneSources
     private static readonly SemaphoreSlim DropsGate = new(1, 1);
     private static DateTime _lastDropsRequest = DateTime.MinValue;
 
-    private static string CacheFolder => Path.Combine(SettingsStore.Folder, "zone-cache");
+    private static string CacheFolder => Path.Combine(SettingsStore.CacheFolder, "zone-cache");
 
     private static HttpClient CreateClient()
     {

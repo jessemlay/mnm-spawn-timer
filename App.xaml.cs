@@ -4,7 +4,9 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using SpawnTimer.Core;
@@ -30,6 +32,10 @@ public partial class App : Application
     private readonly Dictionary<string, DateTimeOffset> _lastNamedAlert = new(StringComparer.OrdinalIgnoreCase);
     private LedgerWatcher? _ledger;
     private DispatcherTimer? _tick;
+    private DispatcherTimer? _updateTimer;
+    private Forms.ToolStripMenuItem? _updateMenuItem;
+    private UpdateInfo? _availableUpdate;
+    private bool _updateBusy;
     private DateTime _lastMeterRefresh = DateTime.MinValue;
     private DateTimeOffset _appStart;
     private bool _editMode;
@@ -69,7 +75,7 @@ public partial class App : Application
                 System.IO.File.AppendAllText(log, $"{DateTime.Now:u}  {args.Exception}{Environment.NewLine}{Environment.NewLine}");
             }
             catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { }
-            Banner(AlertKind.Info, "Spawn Timer hit an error", $"{args.Exception.Message} (details in %APPDATA%\\SpawnTimer\\errors.log)");
+            Banner(AlertKind.Info, "Spawn Timer hit an error", $"{args.Exception.Message} (details in Documents\\Spawn Timer\\errors.log)");
         };
 
         _appStart = DateTimeOffset.Now;
@@ -102,6 +108,18 @@ public partial class App : Application
         _tick = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(100) };
         _tick.Tick += (_, _) => OnTick();
         _tick.Start();
+
+        // Update check: once shortly after startup (may auto-install), then every 6 hours (banner only).
+        var firstCheck = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        firstCheck.Tick += async (_, _) =>
+        {
+            firstCheck.Stop();
+            await CheckForUpdatesAsync(atStartup: true, manual: false);
+        };
+        firstCheck.Start();
+        _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
+        _updateTimer.Tick += async (_, _) => await CheckForUpdatesAsync(atStartup: false, manual: false);
+        _updateTimer.Start();
         OnTick();
 
         if (Settings.FirstRun)
@@ -113,6 +131,96 @@ public partial class App : Application
                 "Right-click the tray icon for settings. Default hotkeys: Ctrl+Alt+1 start, 2 stop, 3 restart.",
                 Forms.ToolTipIcon.Info);
         }
+    }
+
+    /// <summary>Shown in Settings ▸ Updates.</summary>
+    public string UpdateStatus { get; private set; } = $"Spawn Timer {Updates.CurrentVersion}. Not checked yet.";
+
+    public Task CheckForUpdatesNow() => CheckForUpdatesAsync(atStartup: false, manual: true);
+
+    /// <summary>
+    /// Looks for a newer GitHub release. At startup with "install automatically" on it installs right away
+    /// (before you're in the game); otherwise it announces it once with a banner and adds a tray item.
+    /// </summary>
+    private async Task CheckForUpdatesAsync(bool atStartup, bool manual)
+    {
+        if (_updateBusy || (!manual && !Settings.Updates.CheckForUpdates)) return;
+        try
+        {
+            var update = await Updates.CheckAsync(CancellationToken.None);
+            _availableUpdate = update;
+            RefreshUpdateMenu();
+            if (update == null)
+            {
+                UpdateStatus = $"Spawn Timer {Updates.CurrentVersion} is up to date (checked {DateTime.Now:t}).";
+                if (manual) Banner(AlertKind.Info, "You're up to date", $"Spawn Timer {Updates.CurrentVersion}");
+                return;
+            }
+
+            UpdateStatus = $"Spawn Timer {Updates.CurrentVersion}. Update available: v{update.Version} (checked {DateTime.Now:t}).";
+            if (atStartup && Settings.Updates.InstallAutomatically && !Updates.IsDevBuild)
+            {
+                await InstallUpdateAsync();
+                return;
+            }
+            if (manual || Settings.Updates.LastAnnouncedVersion != update.Version.ToString())
+            {
+                Banner(AlertKind.Info, $"Update available: v{update.Version}",
+                    "Tray ▸ Install update. One admin prompt, then the app restarts with your settings.");
+                Settings.Updates.LastAnnouncedVersion = update.Version.ToString();
+                SettingsStore.Save(Settings);
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            UpdateStatus = $"Spawn Timer {Updates.CurrentVersion}. Couldn't check for updates: {ex.Message}";
+            if (manual) Banner(AlertKind.Info, "Couldn't check for updates", ex.Message);
+        }
+    }
+
+    /// <summary>Download + verify the installer, run it silently (it relaunches the app), and exit.</summary>
+    public async Task InstallUpdateAsync()
+    {
+        if (_availableUpdate is not { } update || _updateBusy) return;
+        _updateBusy = true;
+        RefreshUpdateMenu();
+        try
+        {
+            Banner(AlertKind.Info, $"Updating to v{update.Version}", "Downloading and verifying the installer…");
+            var setup = await Updates.DownloadAsync(update, CancellationToken.None);
+            SettingsStore.Save(Settings);
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(setup, "/SILENT /SUPPRESSMSGBOXES /NORESTART /RELAUNCH=1")
+                {
+                    UseShellExecute = true, // lets Windows show the admin prompt
+                });
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) // admin prompt declined
+            {
+                Banner(AlertKind.Info, "Update cancelled", "The admin prompt was declined. Tray ▸ Install update to try again.");
+                return;
+            }
+            Shutdown(); // the installer replaces the exe and starts the new version
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or System.IO.IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            UpdateStatus = $"Spawn Timer {Updates.CurrentVersion}. Update to v{update.Version} failed: {ex.Message}";
+            Banner(AlertKind.Info, "Update failed", ex.Message);
+        }
+        finally
+        {
+            _updateBusy = false;
+            RefreshUpdateMenu();
+        }
+    }
+
+    private void RefreshUpdateMenu()
+    {
+        if (_updateMenuItem == null) return;
+        _updateMenuItem.Visible = _availableUpdate != null;
+        _updateMenuItem.Enabled = !_updateBusy;
+        _updateMenuItem.Text = _updateBusy ? "Updating…" : $"Install update v{_availableUpdate?.Version}";
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -613,6 +721,13 @@ public partial class App : Application
         _lockMenuItem = new Forms.ToolStripMenuItem("Unlock overlays (move)", null, (_, _) => SetEditMode(!_editMode));
         menu.Items.Add(_lockMenuItem);
         menu.Items.Add("Export session to CSV…", null, (_, _) => ExportSession());
+        _updateMenuItem = new Forms.ToolStripMenuItem("Install update", null, async (_, _) => await InstallUpdateAsync())
+        {
+            Visible = false,
+            Font = new Font(Forms.SystemInformation.MenuFont, System.Drawing.FontStyle.Bold),
+        };
+        menu.Items.Insert(0, _updateMenuItem);
+        menu.Items.Add("Check for updates", null, async (_, _) => await CheckForUpdatesNow());
         menu.Items.Add("Reset session", null, (_, _) => ResetSession());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Shutdown());
