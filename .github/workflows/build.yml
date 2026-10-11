@@ -81,7 +81,8 @@ jobs:
           Get-Content $log | Select-String -Pattern 'dotnet|\.NET|Running|exit code|Installation process succeeded|Error' | ForEach-Object { $_.Line }
           if ($p.ExitCode -ne 0) { throw "Setup exited with $($p.ExitCode)" }
           if (-not (Test-Path "$dir\SpawnTimer.exe")) { throw 'SpawnTimer.exe was not installed' }
-          if (-not (Select-String -Path $log -Pattern '.NET installer exit code' -Quiet)) { throw '.NET runtime install step did not run' }
+          $runs = @(Select-String -Path $log -Pattern '.NET installer exit code').Count
+          if ($runs -ne 1) { throw ".NET runtime installer ran $runs times (expected exactly 1)" }
           $u = Start-Process "$dir\unins000.exe" -Wait -PassThru -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
           if ($u.ExitCode -ne 0) { throw "Uninstall exited with $($u.ExitCode)" }
           Start-Sleep -Seconds 3

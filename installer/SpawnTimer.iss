@@ -83,6 +83,7 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe}"; Flags: runhidden
 [Code]
 var
   DownloadPage: TDownloadWizardPage;
+  DotNetDone: Boolean; { set once the runtime installer has run, so it never runs twice }
 
 function ForceDotNet: Boolean;
 begin
@@ -101,7 +102,7 @@ end;
 
 function NeedsDotNet: Boolean;
 begin
-  Result := ForceDotNet or not DotNetDesktop9Installed;
+  Result := not DotNetDone and (ForceDotNet or not DotNetDesktop9Installed);
 end;
 
 function OnDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
@@ -131,6 +132,7 @@ begin
     exit;
   end;
   Log(Format('.NET installer exit code: %d', [ResultCode]));
+  DotNetDone := True;
   { 0 = installed, 3010 = installed but needs a reboot, 1638 = a newer/same version is already installed. }
   if ResultCode = 3010 then
     NeedsRestart := True
@@ -181,7 +183,8 @@ begin
   end;
 end;
 
-{ Silent installs never show the Ready page, so handle the runtime here; also stop a running copy before files are replaced. }
+{ Stops a running copy before files are replaced. Also a fallback for the runtime in case the Ready page step
+  didn't run it (Inno normally calls NextButtonClick even in silent mode; DotNetDone prevents a second run). }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
