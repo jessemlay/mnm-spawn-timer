@@ -651,19 +651,12 @@ public partial class App : Application
         }
     }
 
+    /// <summary>The app icon at the tray's size for this display's scaling (16, 20, 24 or 32 px).</summary>
     private static Icon MakeTrayIcon()
     {
-        using var bmp = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            g.Clear(System.Drawing.Color.Transparent);
-            using var ring = new Pen(System.Drawing.Color.FromArgb(0x7F, 0xD4, 0xFF), 4);
-            g.DrawEllipse(ring, 3, 3, 26, 26);
-            using var hand = new Pen(System.Drawing.Color.White, 3);
-            g.DrawLine(hand, 16, 16, 16, 7);
-            g.DrawLine(hand, 16, 16, 23, 16);
-        }
-        return Icon.FromHandle(bmp.GetHicon());
+        var resource = GetResourceStream(new Uri("pack://application:,,,/Assets/SpawnTimer.ico"));
+        if (resource == null) return SystemIcons.Application;
+        using var stream = resource.Stream;
+        return new Icon(stream, Forms.SystemInformation.SmallIconSize);
     }
 }

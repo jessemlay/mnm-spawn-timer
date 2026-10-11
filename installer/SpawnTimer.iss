@@ -50,6 +50,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 UninstallDisplayIcon={app}\{#AppExe}
+SetupIconFile=..\Assets\SpawnTimer.ico
 UninstallDisplayName={#AppName}
 ; Setup stops the app itself (PrepareToInstall), so skip the Restart Manager prompt.
 CloseApplications=no

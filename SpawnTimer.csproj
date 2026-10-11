@@ -13,6 +13,17 @@
     <!-- CI appends -ci.N to this; a pushed tag like v1.2.0 sets the full version. -->
     <VersionPrefix>1.2.0</VersionPrefix>
     <Product>Spawn Timer for Monsters &amp; Memories</Product>
+    <!-- Exe icon: Explorer, desktop/Start Menu shortcuts and the uninstall entry all use it. -->
+    <ApplicationIcon>Assets\SpawnTimer.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Embedded for the tray icon and window icons. -->
+    <Resource Include="Assets\SpawnTimer.ico" />
+    <!-- tools/IconGen is a separate little project that draws the icon. -->
+    <Compile Remove="tools\**" />
+    <None Remove="tools\**" />
+    <Page Remove="tools\**" />
+  </ItemGroup>
 
 </Project>

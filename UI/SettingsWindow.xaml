@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SpawnTimer.UI"
         Title="Spawn Timer · Settings" Width="760" Height="600" MinWidth="640" MinHeight="480"
-        WindowStartupLocation="CenterScreen" FontSize="13">
+        WindowStartupLocation="CenterScreen" FontSize="13" Icon="/Assets/SpawnTimer.ico">
     <Window.Resources>
         <Style TargetType="TextBlock" x:Key="Label">
             <Setter Property="VerticalAlignment" Value="Center" />
