@@ -89,6 +89,7 @@ public partial class App : Application
 
         _timerOverlay = new TimerOverlay(Timers);
         _meterOverlay = new MeterOverlay();
+        _meterOverlay.RestartRequested += ResetSession;
         _alertOverlay = new AlertOverlay();
         var area = SystemParameters.WorkArea;
         _timerOverlay.BindPosition(Settings.TimerOverlay, area.Left + area.Width / 2 - 130, area.Top + 40);
@@ -330,10 +331,13 @@ public partial class App : Application
         Banner(AlertKind.Info, $"Timer removed: {def.Name}", detail);
     }
 
+    /// <summary>Starts a new session from now (meter button, tray and Settings).</summary>
     public void ResetSession()
     {
         Session.Reset();
         _lastMeterRefresh = DateTime.MinValue;
+        OnTick();
+        Banner(AlertKind.Info, "Session restarted", $"Coin, corpses and items count from {DateTime.Now:t}.");
     }
 
     /// <summary>Starts a new session at <paramref name="start"/> and rebuilds it from the Ledger entries since then.</summary>
@@ -844,7 +848,7 @@ public partial class App : Application
         };
         menu.Items.Insert(0, _updateMenuItem);
         menu.Items.Add("Check for updates", null, async (_, _) => await CheckForUpdatesNow());
-        menu.Items.Add("Reset session", null, (_, _) => ResetSession());
+        menu.Items.Add("Restart session", null, (_, _) => ResetSession());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Shutdown());
 

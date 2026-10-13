@@ -3,6 +3,35 @@
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                   xmlns:ui="clr-namespace:SpawnTimer.UI"
                   Title="Session Meter">
+    <ui:OverlayWindow.Resources>
+        <!-- Same flat button look as the timer rows. -->
+        <Style x:Key="RowButton" TargetType="Button">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="#33FFFFFF" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                CornerRadius="4" Padding="7,3">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#667FD4FF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#997FD4FF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </ui:OverlayWindow.Resources>
+
     <Border x:Name="Frame" CornerRadius="8" Padding="12,8" BorderThickness="2" BorderBrush="Transparent">
         <Border.LayoutTransform>
             <ScaleTransform x:Name="Zoom" ScaleX="1" ScaleY="1" />
@@ -14,6 +43,12 @@
             <DockPanel Margin="0,0,0,4">
                 <TextBlock x:Name="HeaderRight" DockPanel.Dock="Right" Foreground="#99FFFFFF" FontSize="11" />
                 <TextBlock x:Name="Header" Text="SESSION" Foreground="#7FD4FF" FontSize="11" FontWeight="Bold" />
+            </DockPanel>
+            <!-- Shown only while overlays are unlocked (tray click, unlock hotkey, or holding Ctrl+Shift). -->
+            <DockPanel x:Name="Controls" Margin="0,0,0,6" Visibility="Collapsed">
+                <Button DockPanel.Dock="Right" Style="{StaticResource RowButton}" Content="Restart session" Click="RestartSession_Click"
+                        ToolTip="Start a new session from now (coin, corpses and items start at 0)" />
+                <TextBlock Text="drag to move" Foreground="#7FD4FF" FontSize="11" VerticalAlignment="Center" />
             </DockPanel>
             <StackPanel x:Name="Rows" />
         </StackPanel>

@@ -11,7 +11,7 @@
     <AssemblyName>SpawnTimer</AssemblyName>
     <RootNamespace>SpawnTimer</RootNamespace>
     <!-- CI appends -ci.N to this; a pushed tag like v1.2.0 sets the full version. -->
-    <VersionPrefix>1.5.4</VersionPrefix>
+    <VersionPrefix>1.5.5</VersionPrefix>
     <Product>Spawn Timer for Monsters &amp; Memories</Product>
     <!-- Exe icon: Explorer, desktop/Start Menu shortcuts and the uninstall entry all use it. -->
     <ApplicationIcon>Assets\SpawnTimer.ico</ApplicationIcon>

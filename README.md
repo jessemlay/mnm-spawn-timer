@@ -148,7 +148,7 @@ Tray icon ▸ **Export session to CSV…** (or Settings ▸ Overlays). It saves 
 - `MnM session <date time>_mobs.csv`: one row per mob, with corpses looted, items looted (party and yours),
   your coin and first/last seen, plus session totals.
 
-A session **follows the game**: it starts when Monsters & Memories launches and ends (totals frozen) when it closes. A loot after 45 minutes with none (adjustable) also starts a new one, for when the game is left running. The meter header shows when the session started, e.g. "since 12:22 PM · 29m". **Reset session** still works by hand; export before resetting.
+A session **follows the game**: it starts when Monsters & Memories launches and ends (totals frozen) when it closes. A loot after 45 minutes with none (adjustable) also starts a new one, for when the game is left running. The meter header shows when the session started, e.g. "since 12:22 PM · 29m". To start one by hand, use **Restart session**: it's on the meter while the overlays are unlocked (tray click, Ctrl+Alt+0, or hold Ctrl+Shift), and in the tray menu. Export first if you want the old session's CSV.
 
 What the Ledger **cannot** give you:
 - **DPS or healing**: no damage or heal data is written anywhere.

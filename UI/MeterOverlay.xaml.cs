@@ -106,9 +106,15 @@ public partial class MeterOverlay : OverlayWindow
         }
     }
 
+    /// <summary>Raised when the Restart session button is clicked.</summary>
+    public event Action? RestartRequested;
+
+    private void RestartSession_Click(object sender, RoutedEventArgs e) => RestartRequested?.Invoke();
+
     protected override void OnEditModeChanged(bool editMode)
     {
-        Header.Text = editMode ? "SESSION · drag to move" : "SESSION";
+        Controls.Visibility = editMode ? Visibility.Visible : Visibility.Collapsed;
+        Header.Text = "SESSION";
         Frame.BorderBrush = editMode ? SectionBrush : Brushes.Transparent;
         UpdateBackground();
     }
