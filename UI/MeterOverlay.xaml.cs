@@ -33,36 +33,41 @@ public partial class MeterOverlay : OverlayWindow
     public void Refresh(SessionStats stats, MeterSettings meter, bool ledgerEnabled, string ledgerStatus)
     {
         Rows.Children.Clear();
-        HeaderRight.Text = meter.ShowSessionTime ? TimeFormat.Clock(stats.Elapsed) : "";
+        HeaderRight.Text = meter.ShowSessionTime ? SessionLabel(stats) : "";
 
         if (!ledgerEnabled)
         {
             AddNote("Game data is off. Turn it on in Settings ▸ Game data.");
             return;
         }
-        if (!stats.HasData)
+        if (stats.IsEnded && !stats.HasData)
+        {
+            AddNote("Waiting for Monsters & Memories to start…");
+            return;
+        }
+        if (stats.IsEnded) AddNote("Game closed · last session's totals");
+        else if (!stats.HasData)
         {
             AddNote(ledgerStatus);
             AddNote("Waiting for loot…");
         }
 
         // Rates follow your recent pace and fade to 0 when you stop (RateWindowMinutes; 0 = session average).
-        // The first few minutes swing wildly, so wait before showing one.
+        // The first few minutes swing wildly, so wait before showing one; an ended session has no live rate.
         var now = DateTimeOffset.Now;
         var window = TimeSpan.FromMinutes(Math.Max(0, meter.RateWindowMinutes));
         var warmingUp = stats.Elapsed < TimeSpan.FromMinutes(5);
+        string RateText(string live) => stats.IsEnded ? "(ended)" : warmingUp ? "(…/hr)" : live;
 
         if (meter.ShowZone && stats.Zone.Length > 0) AddRow("Zone", PrettyZone(stats.Zone));
         if (meter.ShowKills)
         {
-            var killRate = warmingUp ? "(…/hr)" : $"({stats.CorpsesPerHour(window, now):0}/hr)";
+            var killRate = RateText($"({stats.CorpsesPerHour(window, now):0}/hr)");
             AddRow("Corpses looted", meter.ShowKillRate ? $"{stats.Kills}   {killRate}" : $"{stats.Kills}");
         }
         if (meter.ShowCoin)
         {
-            var rate = warmingUp
-                ? "(…/hr)"
-                : $"({CoinFormat.Format((long)Math.Round(stats.CoinPerHour(window, now)))}/hr)";
+            var rate = RateText($"({CoinFormat.Format((long)Math.Round(stats.CoinPerHour(window, now)))}/hr)");
             var label = stats.PartySize > 1 ? $"Coin looted ({stats.PartySize}-way)" : "Coin looted";
             AddRow(label, meter.ShowCoinRate ? $"{CoinFormat.Format(stats.LootCoinCp)}   {rate}" : CoinFormat.Format(stats.LootCoinCp));
         }
@@ -137,6 +142,20 @@ public partial class MeterOverlay : OverlayWindow
 
     private void AddNote(string text) =>
         Rows.Children.Add(new TextBlock { Text = text, Foreground = DimBrush, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1) });
+
+    /// <summary>"since 12:11 PM · 33m" (or "since Sat 7:56 AM · 2d 4h" for an older session).</summary>
+    private static string SessionLabel(SessionStats stats)
+    {
+        var start = stats.EndTime?.LocalDateTime ?? stats.Start.LocalDateTime;
+        // "t" is only the short-time pattern on its own; inside "ddd t" it would mean the A/P designator.
+        var when = start.Date == DateTime.Today ? start.ToString("t") : $"{start:ddd} {start:t}";
+        var prefix = stats.IsEnded ? "ended" : "since";
+        var e = stats.Elapsed;
+        var length = e.TotalDays >= 1 ? $"{(int)e.TotalDays}d {e.Hours}h"
+            : e.TotalHours >= 1 ? $"{(int)e.TotalHours}h {e.Minutes:00}m"
+            : $"{(int)e.TotalMinutes}m";
+        return $"{prefix} {when} · {length}";
+    }
 
     private static string PrettyZone(string zone) =>
         zone.Length == 0 ? zone : char.ToUpperInvariant(zone[0]) + zone[1..];

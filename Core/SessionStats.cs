@@ -48,6 +48,9 @@ public sealed class SessionStats
     public int? Level { get; private set; }
     public string Zone { get; private set; } = "";
     public bool HasData { get; private set; }
+
+    /// <summary>Time of the latest loot or coin in this session (for "long break" detection).</summary>
+    public DateTimeOffset? LastLootTime { get; private set; }
     public IReadOnlyList<LedgerEvent> RecentLoot => _recentLoot;
 
     /// <summary>Every ledger event in this session, oldest first (for export).</summary>
@@ -55,7 +58,15 @@ public sealed class SessionStats
 
     public IReadOnlyCollection<MobSummary> Mobs => _mobs.Values;
 
-    public TimeSpan Elapsed => DateTimeOffset.Now - Start;
+    /// <summary>When the session ended (the game closed); null while it's running.</summary>
+    public DateTimeOffset? EndTime { get; private set; }
+
+    public bool IsEnded => EndTime != null;
+
+    /// <summary>Freezes the session (totals stay; elapsed time stops).</summary>
+    public void Stop(DateTimeOffset at) => EndTime ??= at;
+
+    public TimeSpan Elapsed => (EndTime ?? DateTimeOffset.Now) - Start;
 
     public double PerHour(double value) => value / Math.Max(Elapsed.TotalHours, 1.0 / 60);
 
@@ -98,6 +109,8 @@ public sealed class SessionStats
         Kills = ItemsLooted = LevelsGained = 0;
         LootCoinCp = SalesCp = 0;
         HasData = false;
+        LastLootTime = null;
+        EndTime = null;
         _lastCorpseEvent.Clear();
         _mobs.Clear();
         _events.Clear();
@@ -113,11 +126,12 @@ public sealed class SessionStats
     {
         // Party state is tracked from all history (including before the session) so the first loot splits correctly.
         TrackParty(e);
-        if (e.Time < Start) return;
+        if (e.Time < Start || e.Time > EndTime) return;
 
         HasData = true;
         _events.Add(e);
         if (e.Zone.Length > 0) Zone = e.Zone;
+        if (e.Kind is LedgerKind.ItemLoot or LedgerKind.CoinLoot && (LastLootTime == null || e.Time > LastLootTime)) LastLootTime = e.Time;
 
         switch (e.Kind)
         {

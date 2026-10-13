@@ -35,6 +35,10 @@ public partial class App : Application
     private DispatcherTimer? _updateTimer;
     private ItemLookupController? _itemLookup;
     private string _lastLedgerZone = "";
+    // Recent Ledger entries, so a new session can be rebuilt from any start time (e.g. when the game launched).
+    private readonly List<LedgerEvent> _ledgerHistory = new();
+    private DispatcherTimer? _gameWatch;
+    private DateTime? _seenGameStart;
     private Forms.ToolStripMenuItem? _updateMenuItem;
     private UpdateInfo? _availableUpdate;
     private bool _updateBusy;
@@ -126,6 +130,12 @@ public partial class App : Application
             await CheckForUpdatesAsync(atStartup: true, manual: false);
         };
         firstCheck.Start();
+        // The session follows the game: starts when mnm.exe launches, ends when it closes.
+        _gameWatch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _gameWatch.Tick += (_, _) => CheckGameState();
+        _gameWatch.Start();
+        CheckGameState();
+
         _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
         _updateTimer.Tick += async (_, _) => await CheckForUpdatesAsync(atStartup: false, manual: false);
         _updateTimer.Start();
@@ -324,6 +334,69 @@ public partial class App : Application
     {
         Session.Reset();
         _lastMeterRefresh = DateTime.MinValue;
+    }
+
+    /// <summary>Starts a new session at <paramref name="start"/> and rebuilds it from the Ledger entries since then.</summary>
+    private void StartNewSession(DateTimeOffset start, string reason, bool announce = true)
+    {
+        Session.Reset(start);
+        foreach (var e in _ledgerHistory) Session.Apply(e); // earlier entries only update party state
+        _lastMeterRefresh = DateTime.MinValue;
+        if (announce)
+            Banner(AlertKind.Info, "New session", $"Started {reason} ({start.LocalDateTime:t}). Coin and corpses count from here.");
+    }
+
+    /// <summary>True while Monsters &amp; Memories is running (as of the last check).</summary>
+    public bool GameRunning { get; private set; }
+
+    private bool _gameStateKnown;
+
+    /// <summary>
+    /// The session follows the game (mnm.exe): a launch starts a new session from the launch time (also when Spawn
+    /// Timer starts while the game is already running); closing the game ends the session, freezing its totals.
+    /// </summary>
+    private void CheckGameState()
+    {
+        if (!Settings.Meter.AutoNewSession) return;
+        DateTime? gameStart = null;
+        foreach (var p in System.Diagnostics.Process.GetProcessesByName("mnm"))
+        {
+            try
+            {
+                if (gameStart == null || p.StartTime < gameStart) gameStart = p.StartTime;
+            }
+            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException) { }
+            finally
+            {
+                p.Dispose();
+            }
+        }
+
+        var firstLook = !_gameStateKnown;
+        _gameStateKnown = true;
+
+        if (gameStart is { } started)
+        {
+            GameRunning = true;
+            if (started == _seenGameStart && !Session.IsEnded) return;
+            _seenGameStart = started;
+            var launch = new DateTimeOffset(started);
+            // A new launch (or the first look at an already-running game) starts the session at the launch time.
+            if (firstLook || Session.IsEnded || launch > Session.Start.AddMinutes(1))
+                StartNewSession(launch, "when the game launched", announce: !firstLook);
+        }
+        else
+        {
+            var wasRunning = GameRunning;
+            GameRunning = false;
+            if (!Session.IsEnded)
+            {
+                Session.Stop(DateTimeOffset.Now);
+                _lastMeterRefresh = DateTime.MinValue;
+                if (wasRunning)
+                    Banner(AlertKind.Info, "Game closed", $"Session ended: {CoinFormat.Format(Session.LootCoinCp)} looted, {Session.Kills} corpses.");
+            }
+        }
     }
 
     /// <summary>
@@ -550,6 +623,18 @@ public partial class App : Application
             if (e.Owner.Length > 0) _knownPlayers.Add(e.Owner);
             if (!string.IsNullOrEmpty(e.Subject)) _knownPlayers.Add(e.Subject);
 
+            // Long break with no loot: this loot starts a new session.
+            var idle = TimeSpan.FromMinutes(Math.Max(5, Settings.Meter.NewSessionAfterIdleMinutes));
+            // Measured from the last loot, or from the session start if nothing's been looted yet (e.g. the game was
+            // left running overnight). Breaks found while replaying history at startup restart quietly.
+            var sinceActivity = e.Time - (Session.LastLootTime ?? Session.Start);
+            if (Settings.Meter.AutoNewSession && e.Kind is LedgerKind.ItemLoot or LedgerKind.CoinLoot
+                && e.Time >= Session.Start && !Session.IsEnded && sinceActivity > idle)
+            {
+                StartNewSession(e.Time.AddSeconds(-1), "after a break with no loot", announce: e.Time >= _appStart);
+            }
+
+            _ledgerHistory.Add(e);
             Session.Apply(e);
 
             if (e.Kind is not (LedgerKind.ItemLoot or LedgerKind.CoinLoot)) continue;
@@ -580,6 +665,10 @@ public partial class App : Application
         }
         if (historyChanged) SettingsStore.Save(Settings); // camp history survives restarts
         _lastMeterRefresh = DateTime.MinValue;
+
+        // Keep about three days of entries for session rebuilds.
+        var cutoff = DateTimeOffset.Now.AddDays(-3);
+        if (_ledgerHistory.Count > 0 && _ledgerHistory[0].Time < cutoff) _ledgerHistory.RemoveAll(x => x.Time < cutoff);
 
         // Zone changes (seen on loot entries, including history replayed at startup) preload that zone's items.
         var zone = events.LastOrDefault(e => e.Zone.Length > 0)?.Zone;

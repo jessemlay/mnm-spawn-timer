@@ -174,6 +174,12 @@ public sealed class MeterSettings
 
     /// <summary>Per-hour rates follow the last ~N minutes and fade to 0 when you stop; 0 = whole-session average.</summary>
     public int RateWindowMinutes { get; set; } = 10;
+
+    /// <summary>Start a new session when the game launches, or after a long break with no loot.</summary>
+    public bool AutoNewSession { get; set; } = true;
+
+    /// <summary>Minutes without loot after which the next loot starts a new session.</summary>
+    public int NewSessionAfterIdleMinutes { get; set; } = 45;
 }
 
 public sealed class LedgerSettings
