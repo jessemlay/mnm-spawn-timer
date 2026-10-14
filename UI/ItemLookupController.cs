@@ -40,6 +40,8 @@ public sealed class ItemLookupController
     private List<MobInfo> _mobs = new();
     /// <summary>Mob lookup: the results, parallel to <see cref="_results"/> (names can repeat across zones).</summary>
     private List<MobInfo> _mobResults = new();
+    /// <summary>Mob lookup: the highlighted mob's cached wiki thumbnail, or null.</summary>
+    private string? _mobImage;
     private string _zoneName = "";
     private string _zoneCode = "";
     private string _text = "";
@@ -305,6 +307,17 @@ public sealed class ItemLookupController
         if (_mode == LookupMode.Mobs)
         {
             _details = null;
+            _mobImage = null;
+            if (_results.Count > 0)
+            {
+                // Thumbnail: instant from the cache, else fetched shortly after the highlight settles.
+                _mobImage = MobImages.TryGetCached(_mobResults[_selected].Name, out var known);
+                if (!known && scheduleDetails)
+                {
+                    _detailsDebounce.Stop();
+                    _detailsDebounce.Start();
+                }
+            }
             _cardMessage = _results.Count > 0 ? ""
                 : _text.Length > 0 ? "No matching mobs. Mobs come from your current zone's drop list and from items you've looked up."
                 : _zoneName.Length > 0 ? $"No mobs known for {_zoneName} yet." : "Mobs show up once you're in a zone (from your loot).";
@@ -359,6 +372,7 @@ public sealed class ItemLookupController
             Position = _results.Count > VisibleRows ? $"{_selected + 1} of {_results.Count}" : "",
             Details = mobs ? null : _details,
             Mob = mobs && _results.Count > 0 ? _mobResults[Math.Clamp(_selected, 0, _mobResults.Count - 1)] : null,
+            MobImage = mobs ? _mobImage : null,
             UsableByYou = mobs ? UsableByYou() : null,
             CardMessage = _cardMessage,
             YourClass = _settings.ItemLookup.YourClass?.Trim() ?? "",
@@ -391,7 +405,12 @@ public sealed class ItemLookupController
 
     private async Task LoadSelectedDetailsAsync()
     {
-        if (!IsOpen || _results.Count == 0 || _mode != LookupMode.Items) return;
+        if (!IsOpen || _results.Count == 0) return;
+        if (_mode == LookupMode.Mobs)
+        {
+            await LoadSelectedMobImageAsync();
+            return;
+        }
         var title = _results[Math.Clamp(_selected, 0, _results.Count - 1)];
         var version = ++_detailsVersion;
         try
@@ -406,6 +425,23 @@ public sealed class ItemLookupController
             _cardMessage = "Couldn't reach the wiki: " + ex.Message;
         }
         Render();
+    }
+
+    private async Task LoadSelectedMobImageAsync()
+    {
+        var mob = _mobResults[Math.Clamp(_selected, 0, _mobResults.Count - 1)].Name;
+        var version = ++_detailsVersion;
+        try
+        {
+            var path = await MobImages.GetAsync(mob, CancellationToken.None);
+            if (version != _detailsVersion || !IsOpen || _mode != LookupMode.Mobs) return;
+            _mobImage = path;
+            if (path != null) Render();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or System.IO.IOException)
+        {
+            // No thumbnail this time; the card is fine without one.
+        }
     }
 
     /// <summary>Background: load the item list (cached 7 days).</summary>

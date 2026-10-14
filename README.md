@@ -80,7 +80,7 @@ Press **Ctrl+Alt+M** (changeable) for the same box in mob mode, or press the oth
 
 - With the box empty you get **every mob in your current zone**, named mobs first. Rows show ★ named, level, and the
   zone for mobs elsewhere.
-- The card lists the mob's **drops** with their slots (✓/✗ for your class). **Click a drop** to jump to its item card.
+- The card shows the mob's **wiki picture** when there is one, and lists its **drops** with their slots (✓/✗ for your class). **Click a drop** to jump to its item card.
   **Ctrl+O** opens the mob's wiki page.
 - Mobs come from your current zone's drop list, plus every mob named in an item you've looked up or preloaded, so
   other zones' mobs fill in as you use it.

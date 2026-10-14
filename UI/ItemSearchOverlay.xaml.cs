@@ -28,6 +28,8 @@ public sealed class ItemLookupView
     public ItemDetails? Details { get; init; }
     /// <summary>Mob lookup: the highlighted mob (shown instead of <see cref="Details"/>).</summary>
     public MobInfo? Mob { get; init; }
+    /// <summary>Mob card: path of the mob's cached wiki thumbnail, or null.</summary>
+    public string? MobImage { get; init; }
     /// <summary>Mob card: item → usable by your class (null = unknown), for the drops list.</summary>
     public Func<string, bool?>? UsableByYou { get; init; }
     public string CardMessage { get; init; } = "";
@@ -133,7 +135,7 @@ public partial class ItemSearchOverlay : OverlayWindow
         Card.Children.Clear();
         if (view.Mob != null)
         {
-            RenderMobCard(view.Mob, view.UsableByYou);
+            RenderMobCard(view.Mob, view.MobImage, view.UsableByYou);
             return;
         }
         var d = view.Details;
@@ -209,14 +211,43 @@ public partial class ItemSearchOverlay : OverlayWindow
 
     private const int MaxDropRows = 16;
 
-    private void RenderMobCard(MobInfo mob, Func<string, bool?>? usableByYou)
+    private void RenderMobCard(MobInfo mob, string? imagePath, Func<string, bool?>? usableByYou)
     {
         CardBorder.Visibility = Visibility.Visible;
-        AddLine(mob.Name, Gold, 15, FontWeights.SemiBold);
-        if (mob.IsNamed) AddLine("NAMED", Accent, 10.5, FontWeights.Bold);
-        AddGap();
-        if (!string.IsNullOrEmpty(mob.Level)) AddPair("Level", mob.Level);
-        if (mob.Zone.Length > 0) AddPair("Zone", mob.Zone);
+        // Header: name, level and zone on the left; the wiki thumbnail (if any) on the right.
+        var header = new DockPanel { LastChildFill = true };
+        var image = LoadThumbnail(imagePath);
+        if (image != null)
+        {
+            var frame = new Border
+            {
+                Child = new Image { Source = image, Stretch = Stretch.Uniform, MaxWidth = 84, MaxHeight = 96 },
+                BorderBrush = Frozen(Color.FromArgb(0x55, 0xFF, 0xC8, 0x57)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3),
+                Margin = new Thickness(8, 2, 0, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+                Cursor = Cursors.Hand,
+                ToolTip = "Open this mob's wiki page (Ctrl+O)",
+            };
+            var name = mob.Name;
+            frame.MouseLeftButtonDown += (_, e) =>
+            {
+                e.Handled = true; // a click, not a window drag
+                OpenSourceClicked?.Invoke(name);
+            };
+            DockPanel.SetDock(frame, Dock.Right);
+            header.Children.Add(frame);
+        }
+        var info = new StackPanel();
+        header.Children.Add(info);
+        Card.Children.Add(header);
+
+        AddLine(mob.Name, Gold, 15, FontWeights.SemiBold, info);
+        if (mob.IsNamed) AddLine("NAMED", Accent, 10.5, FontWeights.Bold, info);
+        info.Children.Add(new Border { Height = 5 });
+        if (!string.IsNullOrEmpty(mob.Level)) AddPair("Level", mob.Level, info);
+        if (mob.Zone.Length > 0) AddPair("Zone", mob.Zone, info);
 
         AddGap();
         AddLine(mob.Drops.Count > 0 ? $"Drops ({mob.Drops.Count})" : "Drops", Accent, 10.5, FontWeights.Bold);
@@ -256,6 +287,26 @@ public partial class ItemSearchOverlay : OverlayWindow
         AddLine((mob.Drops.Count > 0 ? "Click a drop to see its stats · " : "") + "M&M Wiki (CC BY-SA 4.0) · Ctrl+O", Dim, 9.5);
     }
 
+    /// <summary>Loads a cached thumbnail fully into memory (no file lock), or null if missing or unreadable.</summary>
+    private static ImageSource? LoadThumbnail(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return null;
+        try
+        {
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreImageCache;
+            bitmap.UriSource = new Uri(path);
+            bitmap.DecodePixelWidth = 168; // 2× the shown width: sharp at overlay scale up to 2
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or NotSupportedException or InvalidOperationException
+                                       or UnauthorizedAccessException or ArgumentException) { return null; }
+    }
+
     private void AddWikiLink(string title, string tooltip)
     {
         var link = new TextBlock
@@ -292,18 +343,18 @@ public partial class ItemSearchOverlay : OverlayWindow
         Card.Children.Add(block);
     }
 
-    private void AddPair(string label, string value)
+    private void AddPair(string label, string value, Panel? into = null)
     {
         var dock = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
         var v = new TextBlock { Text = value, Foreground = Text, FontSize = 12.5, FontWeight = FontWeights.SemiBold };
         DockPanel.SetDock(v, Dock.Right);
         dock.Children.Add(v);
         dock.Children.Add(new TextBlock { Text = label, Foreground = Dim, FontSize = 12.5 });
-        Card.Children.Add(dock);
+        (into ?? Card).Children.Add(dock);
     }
 
-    private void AddLine(string text, Brush brush, double size, FontWeight? weight = null) =>
-        Card.Children.Add(new TextBlock
+    private void AddLine(string text, Brush brush, double size, FontWeight? weight = null, Panel? into = null) =>
+        (into ?? Card).Children.Add(new TextBlock
         {
             Text = text,
             Foreground = brush,
