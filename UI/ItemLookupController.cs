@@ -31,6 +31,10 @@ public sealed class ItemLookupController
     /// <summary>The window in front when the lookup opened (normally the game); keys are only taken while it stays in front.</summary>
     private IntPtr _ownerWindow;
     private HashSet<string> _zoneItems = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Current zone's drops: item → the mobs that drop it.</summary>
+    private Dictionary<string, List<string>> _zoneDroppedBy = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Zone drops plus every cached item's drop list, so the search also matches mob names.</summary>
+    private Dictionary<string, List<string>>? _droppedBy;
     private string _zoneName = "";
     private string _zoneCode = "";
     private string _text = "";
@@ -248,16 +252,17 @@ public sealed class ItemLookupController
     private void Refresh(bool scheduleDetails)
     {
         var index = ItemDb.Index ?? (IReadOnlyList<string>)Array.Empty<string>();
-        _results = ItemSearch.Find(_text, index, _zoneItems, MaxResults);
+        _droppedBy = _text.Length == 0 ? null : DroppedBy();
+        _results = ItemSearch.Find(_text, index, _zoneItems, MaxResults, _droppedBy);
         _selected = _results.Count == 0 ? 0 : Math.Clamp(_selected, 0, _results.Count - 1);
         if (_selected == 0) _scroll = 0;
         KeepSelectionVisible();
-        _ghost = ItemSearch.Completion(_text, _results);
+        _ghost = ItemSearch.Completion(_text, _results, _droppedBy);
 
         if (_results.Count == 0)
         {
             _details = null;
-            _cardMessage = _text.Length == 0 ? "" : "No matching items on the wiki.";
+            _cardMessage = _text.Length == 0 ? "" : "No matching items or mobs on the wiki.";
         }
         else
         {
@@ -279,7 +284,7 @@ public sealed class ItemLookupController
             ? _status
             : _text.Length == 0 && _zoneItems.Count > 0
                 ? $"All {_zoneItems.Count} drops in {_zoneName} · type to search every item · ↑↓ PgUp/PgDn · Esc close"
-                : "Type to search · ↑↓ PgUp/PgDn · Tab complete · Esc close";
+                : "Type an item or mob name · ↑↓ PgUp/PgDn · Tab complete · Esc close";
         var visible = _results.Skip(_scroll).Take(VisibleRows).ToList();
         _overlay.Render(new ItemLookupView
         {
@@ -298,8 +303,19 @@ public sealed class ItemLookupController
         });
     }
 
+    private Dictionary<string, List<string>> DroppedBy()
+    {
+        var map = ItemDb.CachedDropSources();
+        foreach (var (item, mobs) in _zoneDroppedBy)
+            map[item] = map.TryGetValue(item, out var known) ? mobs.Union(known, StringComparer.OrdinalIgnoreCase).ToList() : mobs;
+        return map;
+    }
+
     private string Tag(string title)
     {
+        // Matched through a mob's name: say which mob, so its drops read as a list.
+        if (ItemSearch.MatchedMob(title, _text, _droppedBy) is { } mob)
+            return "from " + (mob.Length > 20 ? mob[..19].TrimEnd() + "…" : mob);
         var slot = ItemDb.TryGetCached(title)?.Slot ?? "";
         if (!_zoneItems.Contains(title)) return slot;
         // Browsing the zone's own list: every row is a zone drop, so the slot says more than the star.
@@ -359,15 +375,23 @@ public sealed class ItemLookupController
             if (zone == null)
             {
                 _zoneItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                _zoneDroppedBy = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
                 if (IsOpen) Refresh(scheduleDetails: false);
                 return;
             }
             _zoneName = zone.Name;
             var results = await ZoneSources.LoadZoneAsync(zone, useWiki: true, useDrops: false, refresh: false,
                 new Progress<string>(_ => { }), CancellationToken.None);
-            var titles = results.SelectMany(r => r.Mobs).SelectMany(m => m.Drops).Select(d => d.Name)
-                .Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var droppedBy = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var mob in results.SelectMany(r => r.Mobs))
+                foreach (var drop in mob.Drops.Where(d => d.Name.Length > 0))
+                {
+                    if (!droppedBy.TryGetValue(drop.Name, out var mobs)) droppedBy[drop.Name] = mobs = new List<string>();
+                    if (!mobs.Contains(mob.Name, StringComparer.OrdinalIgnoreCase)) mobs.Add(mob.Name);
+                }
+            var titles = droppedBy.Keys.ToList();
             _zoneItems = new HashSet<string>(titles, StringComparer.OrdinalIgnoreCase);
+            _zoneDroppedBy = droppedBy;
             if (IsOpen) Refresh(scheduleDetails: false);
 
             if (_settings.ItemLookup.PreloadZoneItems && titles.Count > 0)

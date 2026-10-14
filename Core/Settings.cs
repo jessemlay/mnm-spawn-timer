@@ -274,6 +274,12 @@ public sealed class AppSettings
     public NamedSettings Named { get; set; } = new();
     public OverlaySettings AlertOverlay { get; set; } = new() { BackgroundOpacity = 75 };
     public bool FirstRun { get; set; } = true;
+
+    /// <summary>When the game closes (session ends), stop every timer and set it back to READY.</summary>
+    public bool ResetTimersWhenGameCloses { get; set; } = true;
+
+    /// <summary>Hide the timer and meter overlays while the game isn't running (they still show while unlocked).</summary>
+    public bool HideOverlaysWhenGameClosed { get; set; } = true;
 }
 
 public static class SettingsStore

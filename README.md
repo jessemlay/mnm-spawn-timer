@@ -40,6 +40,9 @@ git push origin v1.0.0
 
 **Set the game to Borderless or Windowed.** No overlay can draw over exclusive fullscreen.
 
+The timer and meter overlays only show while the game is running. They still appear while unlocked from the tray, the
+hotkey or Settings, so you can place them with the game closed. To always show them, turn this off in Settings ▸ Overlays.
+
 ## Moving the overlays
 
 Overlays are click-through, so mouse clicks reach the game. To move them, do one of these:

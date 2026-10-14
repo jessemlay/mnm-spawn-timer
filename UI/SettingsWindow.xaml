@@ -221,10 +221,17 @@
             <TabItem Header="Overlays">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="10">
+                        <CheckBox IsChecked="{Binding HideOverlaysWhenGameClosed}" Margin="0,0,0,2"
+                                  Content="Hide the timer and meter overlays when the game isn't running" />
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8">
+                            They still show while unlocked (and while this window is open) so you can move them. Alert banners always show.
+                        </TextBlock>
                         <GroupBox Header="Timer overlay">
                             <StackPanel>
                                 <CheckBox IsChecked="{Binding TimerOverlay.Visible}" Content="Show timer overlay" />
                                 <CheckBox IsChecked="{Binding TimerOverlay.HideIdle}" Content="Hide timers that aren't running (the selected one always shows)" />
+                                <CheckBox IsChecked="{Binding ResetTimersWhenGameCloses}"
+                                          Content="Stop and reset timers when the game closes (session ends)" />
                                 <DockPanel Margin="0,6,0,0">
                                     <TextBlock Style="{StaticResource Label}" Width="130" Text="Size" />
                                     <TextBlock DockPanel.Dock="Right" Width="44" Text="{Binding TimerOverlay.Scale, StringFormat={}{0:0.0}×}" VerticalAlignment="Center" />

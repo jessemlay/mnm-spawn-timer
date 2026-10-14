@@ -122,6 +122,25 @@ public static class ItemDb
         lock (Details) return Details.TryGetValue(title, out var d) && DateTime.UtcNow - d.FetchedUtc < CacheAge ? d : null;
     }
 
+    /// <summary>Item title → the mobs that drop it, from every cached item's drop list (zone suffix removed).</summary>
+    public static Dictionary<string, List<string>> CachedDropSources()
+    {
+        EnsureDetailsLoaded();
+        var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        lock (Details)
+            foreach (var (title, d) in Details)
+                if (d.DropsFrom.Count > 0)
+                    map[title] = d.DropsFrom.Select(MobName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return map;
+    }
+
+    /// <summary>"Mob (Zone)" → "Mob".</summary>
+    private static string MobName(string source)
+    {
+        var i = source.LastIndexOf(" (", StringComparison.Ordinal);
+        return i > 0 && source.EndsWith(')') ? source[..i] : source;
+    }
+
     /// <summary>Stats for the given item titles; fetches anything not cached (50 per request).</summary>
     public static async Task<Dictionary<string, ItemDetails>> GetAsync(IEnumerable<string> titles, CancellationToken ct)
     {
@@ -323,19 +342,34 @@ public static class ItemDb
     }
 }
 
-/// <summary>Ranks item titles for the search box: current-zone items first, then prefix, word-start and substring matches.</summary>
+/// <summary>
+/// Ranks item titles for the search box: current-zone items first, then prefix, word-start and substring matches.
+/// The query also matches the mobs that drop an item (<c>droppedBy</c>: item → mob names), so typing a mob's name
+/// lists its drops; a match on the item's own name ranks a little above the same kind of match on a mob.
+/// </summary>
 public static class ItemSearch
 {
-    public static List<string> Find(string query, IReadOnlyList<string> index, IReadOnlySet<string> zoneItems, int max)
+    private const int MobPenalty = 50;
+
+    public static List<string> Find(string query, IReadOnlyList<string> index, IReadOnlySet<string> zoneItems, int max,
+        IReadOnlyDictionary<string, List<string>>? droppedBy = null)
     {
         var q = query.Trim();
         if (q.Length == 0)
             return zoneItems.OrderBy(t => t, StringComparer.OrdinalIgnoreCase).Take(max).ToList();
 
+        var known = new HashSet<string>(index, StringComparer.OrdinalIgnoreCase);
+        var extra = zoneItems.Concat(droppedBy?.Keys ?? Enumerable.Empty<string>()).Where(known.Add).ToList();
         var scored = new List<(string Title, int Score)>();
-        foreach (var title in index.Concat(zoneItems.Where(z => !index.Contains(z, StringComparer.OrdinalIgnoreCase))))
+        foreach (var title in index.Concat(extra))
         {
             var s = Score(title, q);
+            if (droppedBy != null && droppedBy.TryGetValue(title, out var mobs))
+                foreach (var mob in mobs)
+                {
+                    var m = Score(mob, q);
+                    if (m > 0) s = Math.Max(s, m - MobPenalty);
+                }
             if (s <= 0) continue;
             if (zoneItems.Contains(title)) s += 1000;
             scored.Add((title, s));
@@ -352,11 +386,30 @@ public static class ItemSearch
         return idx > 0 && (title[idx - 1] == ' ' || title[idx - 1] == '-' || title[idx - 1] == '\'') ? 200 : 100;
     }
 
-    /// <summary>The rest of the best prefix match, for ghost-text autocomplete ("" if none).</summary>
-    public static string Completion(string query, IEnumerable<string> ranked)
+    /// <summary>The mob whose name matched <paramref name="query"/> better than the item's own name did, or null.</summary>
+    public static string? MatchedMob(string title, string query, IReadOnlyDictionary<string, List<string>>? droppedBy)
+    {
+        var q = query.Trim();
+        if (q.Length == 0 || droppedBy == null || !droppedBy.TryGetValue(title, out var mobs)) return null;
+        var own = Score(title, q);
+        return mobs.Select(m => (Mob: m, Score: Score(m, q)))
+            .Where(x => x.Score > own).OrderByDescending(x => x.Score).Select(x => x.Mob).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// The rest of the best prefix match, for ghost-text autocomplete ("" if none): the top-ranked item, or, when the
+    /// top result came from a mob's name, that mob (so Tab fills in the mob and the list shows its drops).
+    /// </summary>
+    public static string Completion(string query, IReadOnlyList<string> ranked,
+        IReadOnlyDictionary<string, List<string>>? droppedBy = null)
     {
         if (query.Length == 0) return "";
-        var best = ranked.FirstOrDefault(t => t.StartsWith(query, StringComparison.OrdinalIgnoreCase));
-        return best == null ? "" : best[query.Length..];
+        foreach (var title in ranked)
+        {
+            if (title.StartsWith(query, StringComparison.OrdinalIgnoreCase)) return title[query.Length..];
+            var mob = MatchedMob(title, query, droppedBy);
+            if (mob != null && mob.StartsWith(query, StringComparison.OrdinalIgnoreCase)) return mob[query.Length..];
+        }
+        return "";
     }
 }

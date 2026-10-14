@@ -270,9 +270,7 @@ public partial class App : Application
         _meterOverlay!.ApplyAppearance(Settings.MeterOverlay);
         _alertOverlay!.ApplyAppearance(Settings.AlertOverlay);
         _itemLookup?.ApplySettings();
-        SetOverlayVisible(_timerOverlay, Settings.TimerOverlay.Visible);
-        SetOverlayVisible(_meterOverlay, Settings.MeterOverlay.Visible);
-        SetOverlayVisible(_alertOverlay, Settings.AlertOverlay.Visible);
+        UpdateOverlayVisibility();
 
         var wantLedger = Settings.Ledger.Enabled;
         var folder = Settings.Ledger.FolderOverride?.Trim() ?? "";
@@ -340,6 +338,25 @@ public partial class App : Application
         Banner(AlertKind.Info, "Session restarted", $"Coin, corpses and items count from {DateTime.Now:t}.");
     }
 
+    /// <summary>Stops every running/paused timer and sets it back to READY (camp history is kept). True if any changed.</summary>
+    private bool ResetAllTimers()
+    {
+        var now = DateTime.UtcNow;
+        var changed = false;
+        foreach (var t in Timers)
+        {
+            if (t.Phase == TimerPhase.Idle && t.Def.LastCycleStartUtc == null) continue;
+            t.Reset(now);
+            changed = true;
+        }
+        if (changed)
+        {
+            SettingsStore.Save(Settings);
+            OnTick();
+        }
+        return changed;
+    }
+
     /// <summary>Starts a new session at <paramref name="start"/> and rebuilds it from the Ledger entries since then.</summary>
     private void StartNewSession(DateTimeOffset start, string reason, bool announce = true)
     {
@@ -356,19 +373,22 @@ public partial class App : Application
     private bool _gameStateKnown;
 
     /// <summary>
-    /// The session follows the game (mnm.exe): a launch starts a new session from the launch time (also when Spawn
+    /// Tracks whether the game (mnm.exe) is running, which shows or hides the overlays.
+    /// The session follows the game: a launch starts a new session from the launch time (also when Spawn
     /// Timer starts while the game is already running); closing the game ends the session, freezing its totals.
     /// </summary>
     private void CheckGameState()
     {
-        if (!Settings.Meter.AutoNewSession) return;
+        var running = false;
         DateTime? gameStart = null;
         foreach (var p in System.Diagnostics.Process.GetProcessesByName("mnm"))
         {
+            running = true;
             try
             {
                 if (gameStart == null || p.StartTime < gameStart) gameStart = p.StartTime;
             }
+            // StartTime is denied when the game runs as administrator and Spawn Timer doesn't.
             catch (Exception ex) when (ex is Win32Exception or InvalidOperationException) { }
             finally
             {
@@ -378,10 +398,16 @@ public partial class App : Application
 
         var firstLook = !_gameStateKnown;
         _gameStateKnown = true;
+        var wasRunning = GameRunning;
+        GameRunning = running;
+        if (firstLook || running != wasRunning) UpdateOverlayVisibility();
 
-        if (gameStart is { } started)
+        if (!Settings.Meter.AutoNewSession) return;
+
+        if (running)
         {
-            GameRunning = true;
+            // Unreadable launch time: treat the first sighting as the launch.
+            var started = gameStart ?? _seenGameStart ?? DateTime.Now;
             if (started == _seenGameStart && !Session.IsEnded) return;
             _seenGameStart = started;
             var launch = new DateTimeOffset(started);
@@ -391,14 +417,14 @@ public partial class App : Application
         }
         else
         {
-            var wasRunning = GameRunning;
-            GameRunning = false;
             if (!Session.IsEnded)
             {
                 Session.Stop(DateTimeOffset.Now);
                 _lastMeterRefresh = DateTime.MinValue;
+                var timersReset = Settings.ResetTimersWhenGameCloses && ResetAllTimers();
                 if (wasRunning)
-                    Banner(AlertKind.Info, "Game closed", $"Session ended: {CoinFormat.Format(Session.LootCoinCp)} looted, {Session.Kills} corpses.");
+                    Banner(AlertKind.Info, "Game closed",
+                        $"Session ended: {CoinFormat.Format(Session.LootCoinCp)} looted, {Session.Kills} corpses." + (timersReset ? " Timers reset." : ""));
             }
         }
     }
@@ -791,6 +817,7 @@ public partial class App : Application
     {
         _editMode = on;
         UpdateOverlayUnlock();
+        UpdateOverlayVisibility();
         if (_lockMenuItem != null) _lockMenuItem.Text = on ? "Lock overlays" : "Unlock overlays (move)";
         if (!on) SettingsStore.Save(Settings);
         OnTick();
@@ -803,6 +830,20 @@ public partial class App : Application
         _timerOverlay.EditMode = unlocked;
         _meterOverlay!.EditMode = unlocked;
         _alertOverlay!.EditMode = unlocked;
+    }
+
+    /// <summary>
+    /// Timer and meter overlays show only while the game runs (unless that's turned off), and always while unlocked
+    /// so they can be moved. Alert banners always show: they're invisible when empty and report e.g. "Game closed".
+    /// </summary>
+    private void UpdateOverlayVisibility()
+    {
+        if (_timerOverlay == null) return;
+        var show = GameRunning || !Settings.HideOverlaysWhenGameClosed || _editMode;
+        SetOverlayVisible(_timerOverlay, Settings.TimerOverlay.Visible && show);
+        SetOverlayVisible(_meterOverlay!, Settings.MeterOverlay.Visible && show);
+        SetOverlayVisible(_alertOverlay!, Settings.AlertOverlay.Visible);
+        _lastMeterRefresh = DateTime.MinValue; // a meter that just appeared refreshes on the next tick
     }
 
     private static void SetOverlayVisible(Window window, bool visible)
