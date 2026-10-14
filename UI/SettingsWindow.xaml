@@ -165,6 +165,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <TextBlock Style="{StaticResource Label}" Text="Start / resume" />
@@ -196,6 +197,11 @@
                         <ui:HotkeyBox Grid.Row="5" Grid.Column="1" Value="{Binding Hotkeys.ItemSearch}" />
                         <TextBlock Grid.Row="5" Grid.Column="2" Style="{StaticResource Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
                                    Text="Opens/closes the item search over the game." />
+
+                        <TextBlock Grid.Row="6" Style="{StaticResource Label}" Text="Mob lookup" />
+                        <ui:HotkeyBox Grid.Row="6" Grid.Column="1" Value="{Binding Hotkeys.MobSearch}" />
+                        <TextBlock Grid.Row="6" Grid.Column="2" Style="{StaticResource Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                   Text="Search mobs and see what they drop. Press the other lookup key to switch." />
                     </Grid>
 
                     <CheckBox Margin="0,14,0,0" IsChecked="{Binding Hotkeys.HoldToMove}"

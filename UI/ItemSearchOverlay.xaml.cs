@@ -12,6 +12,8 @@ namespace SpawnTimer.UI;
 /// <summary>What the item lookup overlay shows; built by <see cref="ItemLookupController"/>.</summary>
 public sealed class ItemLookupView
 {
+    /// <summary>"ITEM LOOKUP" or "MOB LOOKUP".</summary>
+    public string Heading { get; init; } = "ITEM LOOKUP";
     public string Typed { get; init; } = "";
     public string Ghost { get; init; } = "";
     public string ZoneLabel { get; init; } = "";
@@ -24,6 +26,10 @@ public sealed class ItemLookupView
     /// <summary>e.g. "13 of 34" when the list scrolls.</summary>
     public string Position { get; init; } = "";
     public ItemDetails? Details { get; init; }
+    /// <summary>Mob lookup: the highlighted mob (shown instead of <see cref="Details"/>).</summary>
+    public MobInfo? Mob { get; init; }
+    /// <summary>Mob card: item → usable by your class (null = unknown), for the drops list.</summary>
+    public Func<string, bool?>? UsableByYou { get; init; }
     public string CardMessage { get; init; } = "";
     public string YourClass { get; init; } = "";
 }
@@ -61,6 +67,9 @@ public partial class ItemSearchOverlay : OverlayWindow
     /// <summary>Raised when the card's "Open on M&amp;M Wiki" link is clicked, with the wiki page title.</summary>
     public event Action<string>? OpenSourceClicked;
 
+    /// <summary>Raised when a drop on the mob card is clicked, with the item's title.</summary>
+    public event Action<string>? DropClicked;
+
     public void ApplyAppearance(OverlaySettings settings)
     {
         _settings = settings;
@@ -70,6 +79,7 @@ public partial class ItemSearchOverlay : OverlayWindow
 
     public void Render(ItemLookupView view)
     {
+        Heading.Text = view.Heading;
         Typed.Text = view.Typed;
         Ghost.Text = view.Ghost;
         ZoneLabel.Text = view.ZoneLabel;
@@ -121,6 +131,11 @@ public partial class ItemSearchOverlay : OverlayWindow
     private void RenderCard(ItemLookupView view)
     {
         Card.Children.Clear();
+        if (view.Mob != null)
+        {
+            RenderMobCard(view.Mob, view.UsableByYou);
+            return;
+        }
         var d = view.Details;
         if (d == null)
         {
@@ -188,6 +203,61 @@ public partial class ItemSearchOverlay : OverlayWindow
         }
 
         AddGap();
+        AddWikiLink(d.Title, "Open this item's wiki page in your browser (Ctrl+O)");
+        AddLine("M&M Wiki on Miraheze (CC BY-SA 4.0) · Ctrl+O", Dim, 9.5);
+    }
+
+    private const int MaxDropRows = 16;
+
+    private void RenderMobCard(MobInfo mob, Func<string, bool?>? usableByYou)
+    {
+        CardBorder.Visibility = Visibility.Visible;
+        AddLine(mob.Name, Gold, 15, FontWeights.SemiBold);
+        if (mob.IsNamed) AddLine("NAMED", Accent, 10.5, FontWeights.Bold);
+        AddGap();
+        if (!string.IsNullOrEmpty(mob.Level)) AddPair("Level", mob.Level);
+        if (mob.Zone.Length > 0) AddPair("Zone", mob.Zone);
+
+        AddGap();
+        AddLine(mob.Drops.Count > 0 ? $"Drops ({mob.Drops.Count})" : "Drops", Accent, 10.5, FontWeights.Bold);
+        if (mob.Drops.Count == 0) AddLine("None listed on the wiki.", Dim, 12);
+        foreach (var drop in mob.Drops.Take(MaxDropRows))
+        {
+            var item = drop.Name;
+            var usable = usableByYou?.Invoke(item);
+            var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+            var slot = new TextBlock { Text = drop.Slot ?? "", Foreground = Dim, FontSize = 11, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(slot, Dock.Right);
+            row.Children.Add(slot);
+            var mark = new TextBlock
+            {
+                Text = usable switch { true => "✓", false => "✗", _ => "" },
+                Foreground = usable == true ? Good : Bad,
+                FontSize = 12,
+                Width = usableByYou == null ? 0 : 14,
+            };
+            DockPanel.SetDock(mark, Dock.Left);
+            row.Children.Add(mark);
+            var name = new TextBlock { Text = item, Foreground = usable == false ? Dim : Text, FontSize = 12.5, TextTrimming = TextTrimming.CharacterEllipsis };
+            row.Children.Add(name);
+            row.MouseEnter += (_, _) => name.TextDecorations = TextDecorations.Underline;
+            row.MouseLeave += (_, _) => name.TextDecorations = null;
+            row.MouseLeftButtonDown += (_, e) =>
+            {
+                e.Handled = true; // a click, not a window drag
+                DropClicked?.Invoke(item);
+            };
+            Card.Children.Add(row);
+        }
+        if (mob.Drops.Count > MaxDropRows) AddLine($"+{mob.Drops.Count - MaxDropRows} more (on the wiki page)", Dim, 11);
+
+        AddGap();
+        AddWikiLink(mob.Name, "Open this mob's wiki page in your browser (Ctrl+O)");
+        AddLine((mob.Drops.Count > 0 ? "Click a drop to see its stats · " : "") + "M&M Wiki (CC BY-SA 4.0) · Ctrl+O", Dim, 9.5);
+    }
+
+    private void AddWikiLink(string title, string tooltip)
+    {
         var link = new TextBlock
         {
             Text = "Open on M&M Wiki ↗",
@@ -195,17 +265,15 @@ public partial class ItemSearchOverlay : OverlayWindow
             FontSize = 12,
             TextDecorations = TextDecorations.Underline,
             Cursor = Cursors.Hand,
-            ToolTip = "Open this item's wiki page in your browser (Ctrl+O)",
+            ToolTip = tooltip,
             Margin = new Thickness(0, 1, 0, 0),
         };
-        var title = d.Title;
         link.MouseLeftButtonDown += (_, e) =>
         {
             e.Handled = true; // a click, not a window drag
             OpenSourceClicked?.Invoke(title);
         };
         Card.Children.Add(link);
-        AddLine("M&M Wiki on Miraheze (CC BY-SA 4.0) · Ctrl+O", Dim, 9.5);
     }
 
     private void AddClassLine(string classes, string yourClass)

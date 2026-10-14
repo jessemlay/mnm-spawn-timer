@@ -136,6 +136,7 @@ public sealed class HotkeySettings
     public string NextTimer { get; set; } = "Ctrl+Alt+4";
     public string ToggleEdit { get; set; } = "Ctrl+Alt+0";
     public string ItemSearch { get; set; } = "Ctrl+Alt+I";
+    public string MobSearch { get; set; } = "Ctrl+Alt+M";
 
     /// <summary>When true the game still receives the key press after the timer handles it.</summary>
     public bool PassThrough { get; set; }

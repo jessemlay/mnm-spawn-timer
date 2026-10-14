@@ -74,6 +74,17 @@ your keys go to the search instead of the game, and Alt/Win shortcuts like Alt+T
 - When the app sees you've entered a zone (from your loot), it **preloads that zone's items** in the background,
   so lookups there are instant.
 
+### Mob lookup
+
+Press **Ctrl+Alt+M** (changeable) for the same box in mob mode, or press the other lookup key while it's open to switch.
+
+- With the box empty you get **every mob in your current zone**, named mobs first. Rows show ★ named, level, and the
+  zone for mobs elsewhere.
+- The card lists the mob's **drops** with their slots (✓/✗ for your class). **Click a drop** to jump to its item card.
+  **Ctrl+O** opens the mob's wiki page.
+- Mobs come from your current zone's drop list, plus every mob named in an item you've looked up or preloaded, so
+  other zones' mobs fill in as you use it.
+
 Data comes from the [M&M Wiki on Miraheze](https://monstersandmemories.miraheze.org/) (CC BY-SA 4.0) and is cached
 for 7 days in `%LOCALAPPDATA%\SpawnTimer\item-cache\`.
 
@@ -86,6 +97,8 @@ for 7 days in `%LOCALAPPDATA%\SpawnTimer\item-cache\`.
 | Ctrl+Alt+3 | Restart: a full countdown from now (press it when the mob dies) |
 | Ctrl+Alt+4 | Select the next timer |
 | Ctrl+Alt+0 | Unlock or lock overlays to drag them |
+| Ctrl+Alt+I | Item lookup |
+| Ctrl+Alt+M | Mob lookup |
 
 Each timer can also have its own **restart hotkey**. Hotkeys use a low-level keyboard hook. By default
 the game doesn't see the key. Turn on "Also send hotkey presses to the game" to bind a timer to a key

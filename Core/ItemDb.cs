@@ -122,23 +122,26 @@ public static class ItemDb
         lock (Details) return Details.TryGetValue(title, out var d) && DateTime.UtcNow - d.FetchedUtc < CacheAge ? d : null;
     }
 
-    /// <summary>Item title → the mobs that drop it, from every cached item's drop list (zone suffix removed).</summary>
-    public static Dictionary<string, List<string>> CachedDropSources()
+    /// <summary>(mob, zone, item) for every "drops from" entry of every cached item.</summary>
+    public static List<(string Mob, string Zone, string Item)> CachedDropSources()
     {
         EnsureDetailsLoaded();
-        var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<(string, string, string)>();
         lock (Details)
             foreach (var (title, d) in Details)
-                if (d.DropsFrom.Count > 0)
-                    map[title] = d.DropsFrom.Select(MobName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        return map;
+                foreach (var source in d.DropsFrom)
+                {
+                    var (mob, zone) = SplitSource(source);
+                    list.Add((mob, zone, title));
+                }
+        return list;
     }
 
-    /// <summary>"Mob (Zone)" → "Mob".</summary>
-    private static string MobName(string source)
+    /// <summary>"Mob (Zone)" → ("Mob", "Zone"); "Mob" → ("Mob", "").</summary>
+    public static (string Mob, string Zone) SplitSource(string source)
     {
         var i = source.LastIndexOf(" (", StringComparison.Ordinal);
-        return i > 0 && source.EndsWith(')') ? source[..i] : source;
+        return i > 0 && source.EndsWith(')') ? (source[..i], source[(i + 2)..^1]) : (source, "");
     }
 
     /// <summary>Stats for the given item titles; fetches anything not cached (50 per request).</summary>
@@ -342,34 +345,19 @@ public static class ItemDb
     }
 }
 
-/// <summary>
-/// Ranks item titles for the search box: current-zone items first, then prefix, word-start and substring matches.
-/// The query also matches the mobs that drop an item (<c>droppedBy</c>: item → mob names), so typing a mob's name
-/// lists its drops; a match on the item's own name ranks a little above the same kind of match on a mob.
-/// </summary>
+/// <summary>Ranks item titles for the search box: current-zone items first, then prefix, word-start and substring matches.</summary>
 public static class ItemSearch
 {
-    private const int MobPenalty = 50;
-
-    public static List<string> Find(string query, IReadOnlyList<string> index, IReadOnlySet<string> zoneItems, int max,
-        IReadOnlyDictionary<string, List<string>>? droppedBy = null)
+    public static List<string> Find(string query, IReadOnlyList<string> index, IReadOnlySet<string> zoneItems, int max)
     {
         var q = query.Trim();
         if (q.Length == 0)
             return zoneItems.OrderBy(t => t, StringComparer.OrdinalIgnoreCase).Take(max).ToList();
 
-        var known = new HashSet<string>(index, StringComparer.OrdinalIgnoreCase);
-        var extra = zoneItems.Concat(droppedBy?.Keys ?? Enumerable.Empty<string>()).Where(known.Add).ToList();
         var scored = new List<(string Title, int Score)>();
-        foreach (var title in index.Concat(extra))
+        foreach (var title in index.Concat(zoneItems.Where(z => !index.Contains(z, StringComparer.OrdinalIgnoreCase))))
         {
             var s = Score(title, q);
-            if (droppedBy != null && droppedBy.TryGetValue(title, out var mobs))
-                foreach (var mob in mobs)
-                {
-                    var m = Score(mob, q);
-                    if (m > 0) s = Math.Max(s, m - MobPenalty);
-                }
             if (s <= 0) continue;
             if (zoneItems.Contains(title)) s += 1000;
             scored.Add((title, s));
@@ -378,7 +366,8 @@ public static class ItemSearch
             .Select(x => x.Title).Distinct(StringComparer.OrdinalIgnoreCase).Take(max).ToList();
     }
 
-    private static int Score(string title, string q)
+    /// <summary>300 prefix, 200 word start, 100 anywhere, 0 no match.</summary>
+    public static int Score(string title, string q)
     {
         if (title.StartsWith(q, StringComparison.OrdinalIgnoreCase)) return 300;
         var idx = title.IndexOf(q, StringComparison.OrdinalIgnoreCase);
@@ -386,30 +375,88 @@ public static class ItemSearch
         return idx > 0 && (title[idx - 1] == ' ' || title[idx - 1] == '-' || title[idx - 1] == '\'') ? 200 : 100;
     }
 
-    /// <summary>The mob whose name matched <paramref name="query"/> better than the item's own name did, or null.</summary>
-    public static string? MatchedMob(string title, string query, IReadOnlyDictionary<string, List<string>>? droppedBy)
-    {
-        var q = query.Trim();
-        if (q.Length == 0 || droppedBy == null || !droppedBy.TryGetValue(title, out var mobs)) return null;
-        var own = Score(title, q);
-        return mobs.Select(m => (Mob: m, Score: Score(m, q)))
-            .Where(x => x.Score > own).OrderByDescending(x => x.Score).Select(x => x.Mob).FirstOrDefault();
-    }
-
-    /// <summary>
-    /// The rest of the best prefix match, for ghost-text autocomplete ("" if none): the top-ranked item, or, when the
-    /// top result came from a mob's name, that mob (so Tab fills in the mob and the list shows its drops).
-    /// </summary>
-    public static string Completion(string query, IReadOnlyList<string> ranked,
-        IReadOnlyDictionary<string, List<string>>? droppedBy = null)
+    /// <summary>The rest of the best prefix match, for ghost-text autocomplete ("" if none).</summary>
+    public static string Completion(string query, IEnumerable<string> ranked)
     {
         if (query.Length == 0) return "";
-        foreach (var title in ranked)
+        var best = ranked.FirstOrDefault(t => t.StartsWith(query, StringComparison.OrdinalIgnoreCase));
+        return best == null ? "" : best[query.Length..];
+    }
+}
+
+/// <summary>A mob for the mob lookup, with what it drops.</summary>
+public sealed class MobInfo
+{
+    public string Name { get; init; } = "";
+    public string Zone { get; set; } = "";
+    public string? Level { get; set; }
+    public bool IsNamed { get; set; }
+    /// <summary>From the current zone's drop list (ranked first, listed when the box is empty).</summary>
+    public bool InZone { get; set; }
+    public List<ZoneDrop> Drops { get; } = new();
+
+    public void AddDrop(string item, string? slot)
+    {
+        if (item.Length == 0) return;
+        var existing = Drops.FirstOrDefault(d => d.Name.Equals(item, StringComparison.OrdinalIgnoreCase));
+        if (existing == null) Drops.Add(new ZoneDrop { Name = item, Slot = slot });
+        else if (string.IsNullOrEmpty(existing.Slot)) existing.Slot = slot;
+    }
+}
+
+/// <summary>
+/// Mob lookup: the current zone's mobs (from its wiki drop list) plus every mob named in a cached item's
+/// "drops from" list, so mobs elsewhere show up once you've looked up (or preloaded) their items.
+/// </summary>
+public static class MobSearch
+{
+    public static List<MobInfo> Build(IEnumerable<ZoneMob> zoneMobs, string zoneName,
+        IEnumerable<(string Mob, string Zone, string Item)> cachedSources)
+    {
+        var byKey = new Dictionary<string, MobInfo>(StringComparer.OrdinalIgnoreCase);
+        var byName = new Dictionary<string, MobInfo>(StringComparer.OrdinalIgnoreCase);
+        static string Key(string mob, string zone) => mob + "|" + ZoneNames.Normalize(zone);
+
+        foreach (var m in zoneMobs)
         {
-            if (title.StartsWith(query, StringComparison.OrdinalIgnoreCase)) return title[query.Length..];
-            var mob = MatchedMob(title, query, droppedBy);
-            if (mob != null && mob.StartsWith(query, StringComparison.OrdinalIgnoreCase)) return mob[query.Length..];
+            if (m.Name.Length == 0) continue;
+            if (!byKey.TryGetValue(Key(m.Name, zoneName), out var mob))
+            {
+                mob = new MobInfo { Name = m.Name, Zone = zoneName, InZone = true };
+                byKey[Key(m.Name, zoneName)] = mob;
+                byName.TryAdd(m.Name, mob);
+            }
+            mob.IsNamed |= m.IsNamed;
+            if (string.IsNullOrEmpty(mob.Level)) mob.Level = m.Level;
+            foreach (var d in m.Drops) mob.AddDrop(d.Name, d.Slot);
         }
-        return "";
+
+        foreach (var (name, zone, item) in cachedSources)
+        {
+            if (name.Length == 0) continue;
+            // No zone on the item page: attach to a known mob of that name rather than listing it twice.
+            if (!byKey.TryGetValue(Key(name, zone), out var mob) && !(zone.Length == 0 && byName.TryGetValue(name, out mob)))
+            {
+                mob = new MobInfo { Name = name, Zone = zone };
+                byKey[Key(name, zone)] = mob;
+                byName.TryAdd(name, mob);
+            }
+            mob.AddDrop(item, ItemDb.TryGetCached(item)?.Slot);
+        }
+        return byKey.Values.ToList();
+    }
+
+    /// <summary>Empty query: the current zone's mobs, named first. Otherwise ranked like items, current zone first.</summary>
+    public static List<MobInfo> Find(string query, IReadOnlyList<MobInfo> mobs, int max)
+    {
+        var q = query.Trim();
+        if (q.Length == 0)
+            return mobs.Where(m => m.InZone).OrderByDescending(m => m.IsNamed)
+                .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase).Take(max).ToList();
+        return mobs.Select(m => (Mob: m, Score: ItemSearch.Score(m.Name, q)))
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score + (x.Mob.InZone ? 1000 : 0))
+            .ThenBy(x => x.Mob.Name.Length).ThenBy(x => x.Mob.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.Mob).Take(max).ToList();
     }
 }

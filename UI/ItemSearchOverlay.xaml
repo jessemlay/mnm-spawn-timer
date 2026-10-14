@@ -16,7 +16,7 @@
             <StackPanel Width="330" VerticalAlignment="Top">
                 <DockPanel>
                     <TextBlock x:Name="ZoneLabel" DockPanel.Dock="Right" Foreground="#99FFFFFF" FontSize="11" />
-                    <TextBlock Text="ITEM LOOKUP" Foreground="#7FD4FF" FontSize="11" FontWeight="Bold" />
+                    <TextBlock x:Name="Heading" Text="ITEM LOOKUP" Foreground="#7FD4FF" FontSize="11" FontWeight="Bold" />
                 </DockPanel>
                 <Border Background="#26FFFFFF" CornerRadius="4" Padding="8,5" Margin="0,6,0,4" BorderBrush="#557FD4FF" BorderThickness="1">
                     <TextBlock FontSize="16" TextTrimming="CharacterEllipsis">

@@ -598,7 +598,8 @@ public partial class App : Application
             if (Timers.Count > 0) _activeIndex = (_activeIndex + 1) % Timers.Count;
         });
         Bind(h.ToggleEdit, () => SetEditMode(!_editMode));
-        Bind(h.ItemSearch, () => _itemLookup?.Toggle());
+        Bind(h.ItemSearch, () => _itemLookup?.Toggle(LookupMode.Items));
+        Bind(h.MobSearch, () => _itemLookup?.Toggle(LookupMode.Mobs));
 
         foreach (var state in Timers)
         {

@@ -12,10 +12,13 @@ using SpawnTimer.Core;
 
 namespace SpawnTimer.UI;
 
+public enum LookupMode { Items, Mobs }
+
 /// <summary>
 /// In-game item lookup: a hotkey opens a search box over the game. Keys are captured through the low-level
 /// keyboard hook (the game keeps focus and doesn't receive them), results rank current-zone drops first, Tab/Enter
-/// take the autocomplete, and the highlighted item's stats come from the M&M Wiki.
+/// take the autocomplete, and the highlighted item's stats come from the M&M Wiki. A second hotkey opens the same box
+/// as a mob lookup: the card lists the mob's drops, and clicking one switches to that item.
 /// </summary>
 public sealed class ItemLookupController
 {
@@ -31,10 +34,12 @@ public sealed class ItemLookupController
     /// <summary>The window in front when the lookup opened (normally the game); keys are only taken while it stays in front.</summary>
     private IntPtr _ownerWindow;
     private HashSet<string> _zoneItems = new(StringComparer.OrdinalIgnoreCase);
-    /// <summary>Current zone's drops: item → the mobs that drop it.</summary>
-    private Dictionary<string, List<string>> _zoneDroppedBy = new(StringComparer.OrdinalIgnoreCase);
-    /// <summary>Zone drops plus every cached item's drop list, so the search also matches mob names.</summary>
-    private Dictionary<string, List<string>>? _droppedBy;
+    private List<ZoneMob> _zoneMobs = new();
+    private LookupMode _mode = LookupMode.Items;
+    /// <summary>Mob lookup: every known mob (rebuilt when the box opens or the zone loads).</summary>
+    private List<MobInfo> _mobs = new();
+    /// <summary>Mob lookup: the results, parallel to <see cref="_results"/> (names can repeat across zones).</summary>
+    private List<MobInfo> _mobResults = new();
     private string _zoneName = "";
     private string _zoneCode = "";
     private string _text = "";
@@ -56,6 +61,7 @@ public sealed class ItemLookupController
             Refresh(scheduleDetails: true);
         };
         _overlay.OpenSourceClicked += OpenSourcePage;
+        _overlay.DropClicked += ShowItem;
         _overlay.Scrolled += notches =>
         {
             // Mouse wheel scrolls the list (3 rows per notch) without changing the highlighted item.
@@ -106,16 +112,46 @@ public sealed class ItemLookupController
             _overlay.BindPosition(_settings.ItemOverlay, area.Left + area.Width / 2 - 320, area.Top + area.Height * 0.18);
     }
 
-    public void Toggle()
+    /// <summary>Hotkey: opens in that mode, closes if already open in it, or switches modes.</summary>
+    public void Toggle(LookupMode mode)
     {
-        if (IsOpen) Close();
-        else Open();
+        if (!IsOpen) Open(mode);
+        else if (mode == _mode) Close();
+        else SwitchMode(mode);
     }
 
-    public void Open()
+    private void SwitchMode(LookupMode mode)
+    {
+        _mode = mode;
+        _text = "";
+        _selected = 0;
+        _scroll = 0;
+        _details = null;
+        _cardMessage = "";
+        if (mode == LookupMode.Mobs) RebuildMobs();
+        Refresh(scheduleDetails: true);
+    }
+
+    /// <summary>Clicked a drop on the mob card: look that item up.</summary>
+    private void ShowItem(string item)
+    {
+        _mode = LookupMode.Items;
+        _text = item.Length > MaxLength ? item[..MaxLength] : item;
+        _selected = 0;
+        Refresh(scheduleDetails: false);
+        var at = _results.FindIndex(r => r.Equals(item, StringComparison.OrdinalIgnoreCase));
+        if (at > 0) _selected = at;
+        Refresh(scheduleDetails: true);
+    }
+
+    private void RebuildMobs() => _mobs = MobSearch.Build(_zoneMobs, _zoneName, ItemDb.CachedDropSources());
+
+    public void Open(LookupMode mode = LookupMode.Items)
     {
         if (IsOpen) return;
         IsOpen = true;
+        _mode = mode;
+        if (mode == LookupMode.Mobs) RebuildMobs();
         _ownerWindow = SpawnTimer.Native.NativeMethods.GetForegroundWindow();
         _focusWatch.Start();
         _text = "";
@@ -191,7 +227,7 @@ public sealed class ItemLookupController
                 }
                 break;
             case 0x2E: _text = ""; break; // Delete clears
-            case 0x4F when ctrl: // Ctrl+O: open the highlighted item's wiki page
+            case 0x4F when ctrl: // Ctrl+O: open the highlighted item's (or mob's) wiki page
                 if (_results.Count > 0)
                 {
                     var title = _results[Math.Clamp(_selected, 0, _results.Count - 1)];
@@ -251,18 +287,35 @@ public sealed class ItemLookupController
 
     private void Refresh(bool scheduleDetails)
     {
-        var index = ItemDb.Index ?? (IReadOnlyList<string>)Array.Empty<string>();
-        _droppedBy = _text.Length == 0 ? null : DroppedBy();
-        _results = ItemSearch.Find(_text, index, _zoneItems, MaxResults, _droppedBy);
+        if (_mode == LookupMode.Mobs)
+        {
+            _mobResults = MobSearch.Find(_text, _mobs, MaxResults);
+            _results = _mobResults.Select(m => m.Name).ToList();
+        }
+        else
+        {
+            var index = ItemDb.Index ?? (IReadOnlyList<string>)Array.Empty<string>();
+            _results = ItemSearch.Find(_text, index, _zoneItems, MaxResults);
+        }
         _selected = _results.Count == 0 ? 0 : Math.Clamp(_selected, 0, _results.Count - 1);
         if (_selected == 0) _scroll = 0;
         KeepSelectionVisible();
-        _ghost = ItemSearch.Completion(_text, _results, _droppedBy);
+        _ghost = ItemSearch.Completion(_text, _results);
+
+        if (_mode == LookupMode.Mobs)
+        {
+            _details = null;
+            _cardMessage = _results.Count > 0 ? ""
+                : _text.Length > 0 ? "No matching mobs. Mobs come from your current zone's drop list and from items you've looked up."
+                : _zoneName.Length > 0 ? $"No mobs known for {_zoneName} yet." : "Mobs show up once you're in a zone (from your loot).";
+            Render();
+            return;
+        }
 
         if (_results.Count == 0)
         {
             _details = null;
-            _cardMessage = _text.Length == 0 ? "" : "No matching items or mobs on the wiki.";
+            _cardMessage = _text.Length == 0 ? "" : "No matching items on the wiki.";
         }
         else
         {
@@ -280,42 +333,55 @@ public sealed class ItemLookupController
 
     private void Render()
     {
-        var hint = _status.Length > 0
+        var mobs = _mode == LookupMode.Mobs;
+        var zoneCount = mobs ? _mobs.Count(m => m.InZone) : _zoneItems.Count;
+        var hint = _status.Length > 0 && !mobs
             ? _status
-            : _text.Length == 0 && _zoneItems.Count > 0
-                ? $"All {_zoneItems.Count} drops in {_zoneName} · type to search every item · ↑↓ PgUp/PgDn · Esc close"
-                : "Type an item or mob name · ↑↓ PgUp/PgDn · Tab complete · Esc close";
+            : _text.Length == 0 && zoneCount > 0
+                ? mobs
+                    ? $"All {zoneCount} mobs in {_zoneName} · type to search · ↑↓ PgUp/PgDn · Esc close"
+                    : $"All {zoneCount} drops in {_zoneName} · type to search every item · ↑↓ PgUp/PgDn · Esc close"
+                : mobs
+                    ? "Type a mob name · ↑↓ PgUp/PgDn · Tab complete · Esc close"
+                    : "Type an item name · ↑↓ PgUp/PgDn · Tab complete · Esc close";
         var visible = _results.Skip(_scroll).Take(VisibleRows).ToList();
         _overlay.Render(new ItemLookupView
         {
+            Heading = mobs ? "MOB LOOKUP" : "ITEM LOOKUP",
             Typed = _text,
             Ghost = _ghost,
             ZoneLabel = _zoneName,
             Hint = hint,
-            Results = visible.Select(r => (r, Tag(r))).ToList(),
+            Results = visible.Select((r, i) => (r, mobs ? MobTag(_mobResults[_scroll + i]) : Tag(r))).ToList(),
             Selected = _selected - _scroll,
             HiddenAbove = _scroll,
             HiddenBelow = Math.Max(0, _results.Count - _scroll - visible.Count),
             Position = _results.Count > VisibleRows ? $"{_selected + 1} of {_results.Count}" : "",
-            Details = _details,
+            Details = mobs ? null : _details,
+            Mob = mobs && _results.Count > 0 ? _mobResults[Math.Clamp(_selected, 0, _mobResults.Count - 1)] : null,
+            UsableByYou = mobs ? UsableByYou() : null,
             CardMessage = _cardMessage,
             YourClass = _settings.ItemLookup.YourClass?.Trim() ?? "",
         });
     }
 
-    private Dictionary<string, List<string>> DroppedBy()
+    /// <summary>Usable-by-your-class check for the mob card's drops (null when no class is set or stats aren't cached).</summary>
+    private Func<string, bool?>? UsableByYou()
     {
-        var map = ItemDb.CachedDropSources();
-        foreach (var (item, mobs) in _zoneDroppedBy)
-            map[item] = map.TryGetValue(item, out var known) ? mobs.Union(known, StringComparer.OrdinalIgnoreCase).ToList() : mobs;
-        return map;
+        var cls = _settings.ItemLookup.YourClass?.Trim() ?? "";
+        if (cls.Length == 0) return null;
+        return item => ItemDb.TryGetCached(item) is { Classes.Length: > 0 } d ? d.UsableBy(cls) : null;
+    }
+
+    private static string MobTag(MobInfo mob)
+    {
+        var level = string.IsNullOrEmpty(mob.Level) ? null : "L" + mob.Level;
+        var where = mob.InZone ? null : mob.Zone.Length > 20 ? mob.Zone[..19].TrimEnd() + "…" : mob.Zone;
+        return string.Join(" · ", new[] { mob.IsNamed ? "★ named" : null, level, where }.Where(t => !string.IsNullOrEmpty(t)));
     }
 
     private string Tag(string title)
     {
-        // Matched through a mob's name: say which mob, so its drops read as a list.
-        if (ItemSearch.MatchedMob(title, _text, _droppedBy) is { } mob)
-            return "from " + (mob.Length > 20 ? mob[..19].TrimEnd() + "…" : mob);
         var slot = ItemDb.TryGetCached(title)?.Slot ?? "";
         if (!_zoneItems.Contains(title)) return slot;
         // Browsing the zone's own list: every row is a zone drop, so the slot says more than the star.
@@ -325,7 +391,7 @@ public sealed class ItemLookupController
 
     private async Task LoadSelectedDetailsAsync()
     {
-        if (!IsOpen || _results.Count == 0) return;
+        if (!IsOpen || _results.Count == 0 || _mode != LookupMode.Items) return;
         var title = _results[Math.Clamp(_selected, 0, _results.Count - 1)];
         var version = ++_detailsVersion;
         try
@@ -375,23 +441,18 @@ public sealed class ItemLookupController
             if (zone == null)
             {
                 _zoneItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                _zoneDroppedBy = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                _zoneMobs = new List<ZoneMob>();
                 if (IsOpen) Refresh(scheduleDetails: false);
                 return;
             }
             _zoneName = zone.Name;
             var results = await ZoneSources.LoadZoneAsync(zone, useWiki: true, useDrops: false, refresh: false,
                 new Progress<string>(_ => { }), CancellationToken.None);
-            var droppedBy = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var mob in results.SelectMany(r => r.Mobs))
-                foreach (var drop in mob.Drops.Where(d => d.Name.Length > 0))
-                {
-                    if (!droppedBy.TryGetValue(drop.Name, out var mobs)) droppedBy[drop.Name] = mobs = new List<string>();
-                    if (!mobs.Contains(mob.Name, StringComparer.OrdinalIgnoreCase)) mobs.Add(mob.Name);
-                }
-            var titles = droppedBy.Keys.ToList();
+            _zoneMobs = results.SelectMany(r => r.Mobs).ToList();
+            var titles = _zoneMobs.SelectMany(m => m.Drops).Select(d => d.Name)
+                .Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             _zoneItems = new HashSet<string>(titles, StringComparer.OrdinalIgnoreCase);
-            _zoneDroppedBy = droppedBy;
+            if (_mode == LookupMode.Mobs) RebuildMobs();
             if (IsOpen) Refresh(scheduleDetails: false);
 
             if (_settings.ItemLookup.PreloadZoneItems && titles.Count > 0)
