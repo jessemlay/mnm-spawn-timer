@@ -164,6 +164,10 @@ public sealed class MeterSettings
     public bool ShowCoin { get; set; } = true;
     public bool ShowCoinRate { get; set; } = true;
     public bool ShowItems { get; set; } = true;
+    /// <summary>Merchant value of your looted items, priced from your own sales (Documents\Spawn Timer\sales.db).</summary>
+    public bool ShowItemValue { get; set; } = true;
+    /// <summary>Coin plus item value per hour.</summary>
+    public bool ShowValueRate { get; set; } = true;
     public bool ShowLevels { get; set; } = true;
     public bool ShowTopMobs { get; set; } = true;
     public int TopMobsCount { get; set; } = 5;

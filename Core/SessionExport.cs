@@ -26,19 +26,20 @@ public static class SessionExport
             Path.GetFileNameWithoutExtension(eventsPath) + "_mobs" + Path.GetExtension(eventsPath));
 
     /// <summary>Returns the per-mob summary path.</summary>
-    public static string Write(SessionStats stats, string eventsPath)
+    /// <param name="unitPrice">Merchant price per item in copper from your sales (null = never sold), for the value column.</param>
+    public static string Write(SessionStats stats, string eventsPath, Func<string, double?>? unitPrice = null)
     {
-        WriteEvents(stats, eventsPath);
+        WriteEvents(stats, eventsPath, unitPrice);
         var mobsPath = MobsPath(eventsPath);
-        WriteMobs(stats, mobsPath);
+        WriteMobs(stats, mobsPath, unitPrice);
         return mobsPath;
     }
 
-    private static void WriteEvents(SessionStats stats, string path)
+    private static void WriteEvents(SessionStats stats, string path, Func<string, double?>? unitPrice)
     {
         using var w = new StreamWriter(path, false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         Row(w, "Time", "Zone", "Event", "Who", "Mine", "Corpse", "Item", "Quantity",
-            "Coin total (copper)", "My coin (copper)", "My coin", "Detail");
+            "Coin total (copper)", "My coin (copper)", "My coin", "Detail", "Vendor value (copper)");
 
         foreach (var e in stats.Events)
         {
@@ -62,11 +63,13 @@ public static class SessionExport
                 e.CoinTotalCp > 0 ? Num(e.CoinTotalCp) : null,
                 e.MyCoinCp > 0 ? Num(e.MyCoinCp) : null,
                 e.MyCoinCp > 0 ? CoinFormat.Format(e.MyCoinCp) : null,
-                detail);
+                detail,
+                e.Kind == LedgerKind.ItemLoot && !string.IsNullOrEmpty(e.Item) && unitPrice?.Invoke(e.Item) is { } each
+                    ? Num((long)Math.Round(each * Math.Max(1, e.Quantity))) : null);
         }
     }
 
-    private static void WriteMobs(SessionStats stats, string path)
+    private static void WriteMobs(SessionStats stats, string path, Func<string, double?>? unitPrice)
     {
         using var w = new StreamWriter(path, false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         Row(w, "Mob", "Zone", "Corpses looted", "Items looted (party)", "Items looted (me)",
@@ -88,6 +91,12 @@ public static class SessionExport
             DateTimeOffset.Now.LocalDateTime.ToString(TimeFormat, CultureInfo.InvariantCulture));
         Row(w, "Vendor sales", "", "", "", "", Num(stats.SalesCp), CoinFormat.Format(stats.SalesCp), "", "");
         Row(w, "Levels gained", "", Num(stats.LevelsGained), "", "", "", "", "", "");
+        if (unitPrice != null)
+        {
+            var (value, priced, total) = stats.ItemValue(unitPrice);
+            var cp = (long)Math.Round(value);
+            Row(w, "My item value (merchant)", $"{priced} of {total} items priced", "", "", "", Num(cp), CoinFormat.Format(cp), "", "");
+        }
     }
 
     private static string Num(long n) => n.ToString(CultureInfo.InvariantCulture);

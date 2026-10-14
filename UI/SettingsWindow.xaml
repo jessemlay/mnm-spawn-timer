@@ -274,6 +274,8 @@
                                     <CheckBox IsChecked="{Binding Meter.ShowCoin}" Content="Coin looted" />
                                     <CheckBox IsChecked="{Binding Meter.ShowCoinRate}" Content="Coin looted per hour" />
                                     <CheckBox IsChecked="{Binding Meter.ShowItems}" Content="Items looted" />
+                                    <CheckBox IsChecked="{Binding Meter.ShowItemValue}" Content="Item value (from your merchant sales)" />
+                                    <CheckBox IsChecked="{Binding Meter.ShowValueRate}" Content="Coin + items per hour" />
                                     <CheckBox IsChecked="{Binding Meter.ShowLevels}" Content="Levels gained" />
                                 </UniformGrid>
                                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
@@ -342,6 +344,7 @@
 
             <!-- GAME DATA -->
             <TabItem Header="Game data">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="10">
                     <CheckBox FontWeight="SemiBold" IsChecked="{Binding Ledger.Enabled}"
                               Content="Read the game's Ledger files (loot log) for auto-restart and the session meter" />
@@ -366,12 +369,27 @@
                     <TextBlock Margin="0,14,0,2" FontWeight="SemiBold" Text="Status" />
                     <TextBlock x:Name="LedgerStatus" TextWrapping="Wrap" />
 
+                    <TextBlock Margin="0,14,0,2" FontWeight="SemiBold" Text="Ledger check" />
+                    <TextBlock x:Name="LedgerHealthText" TextWrapping="Wrap" FontSize="12" />
+                    <TextBlock Style="{StaticResource Hint}">
+                        Spots Ledger format changes after a patch (new entry types, entries that can't be read) and shows a banner.
+                        Details are logged to ledger-health.log in %LOCALAPPDATA%SpawnTimer.
+                    </TextBlock>
+
+                    <TextBlock Margin="0,14,0,2" FontWeight="SemiBold" Text="Merchant sales (prices for item value)" />
+                    <TextBlock x:Name="SalesSummaryText" TextWrapping="Wrap" FontSize="12" />
+                    <TextBlock Style="{StaticResource Hint}">
+                        Every sale to a merchant, from the Ledger on any character, kept in sales.db next to your settings.
+                        The session meter and lookup cards use each item's latest sale price.
+                    </TextBlock>
+
                     <TextBlock Margin="0,14,0,2" FontWeight="SemiBold" Text="Character folder (leave empty to pick the character you're playing)" />
                     <DockPanel>
                         <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,3,0,3" Click="Browse_Click" />
                         <TextBox Text="{Binding Ledger.FolderOverride}" />
                     </DockPanel>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <!-- ALERTS -->

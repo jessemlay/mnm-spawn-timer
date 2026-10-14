@@ -32,6 +32,8 @@ public sealed class ItemLookupView
     public string? MobImage { get; init; }
     /// <summary>Mob card: item → usable by your class (null = unknown), for the drops list.</summary>
     public Func<string, bool?>? UsableByYou { get; init; }
+    /// <summary>Your merchant price for an item (null = never sold); shown on both cards.</summary>
+    public Func<string, ItemPrice?>? PriceOf { get; init; }
     public string CardMessage { get; init; } = "";
     public string YourClass { get; init; } = "";
 }
@@ -135,7 +137,7 @@ public partial class ItemSearchOverlay : OverlayWindow
         Card.Children.Clear();
         if (view.Mob != null)
         {
-            RenderMobCard(view.Mob, view.MobImage, view.UsableByYou);
+            RenderMobCard(view.Mob, view.MobImage, view.UsableByYou, view.PriceOf);
             return;
         }
         var d = view.Details;
@@ -196,6 +198,13 @@ public partial class ItemSearchOverlay : OverlayWindow
         var weight = string.Join(" · ", new[] { d.Weight.Length > 0 ? $"WT {d.Weight}" : null, d.Size.Length > 0 ? d.Size : null }.Where(s => s != null));
         if (weight.Length > 0) AddLine(weight, Dim, 11.5);
 
+        if ((view.PriceOf?.Invoke(d.Name) ?? view.PriceOf?.Invoke(d.Title)) is { } price)
+        {
+            AddGap();
+            AddPair("Sells for", PriceText(price.UnitCp), Gold);
+            AddLine($"your sale, {price.LastSold.LocalDateTime:MMM d}" + (price.Sales > 1 ? $" · sold {price.Sales}×" : ""), Dim, 10.5);
+        }
+
         if (d.DropsFrom.Count > 0)
         {
             AddGap();
@@ -211,7 +220,7 @@ public partial class ItemSearchOverlay : OverlayWindow
 
     private const int MaxDropRows = 16;
 
-    private void RenderMobCard(MobInfo mob, string? imagePath, Func<string, bool?>? usableByYou)
+    private void RenderMobCard(MobInfo mob, string? imagePath, Func<string, bool?>? usableByYou, Func<string, ItemPrice?>? priceOf)
     {
         CardBorder.Visibility = Visibility.Visible;
         // Header: name, level and zone on the left; the wiki thumbnail (if any) on the right.
@@ -257,6 +266,13 @@ public partial class ItemSearchOverlay : OverlayWindow
             var item = drop.Name;
             var usable = usableByYou?.Invoke(item);
             var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+            // Price you've sold it for (gold), then the slot.
+            if (priceOf?.Invoke(item) is { } price)
+            {
+                var value = new TextBlock { Text = PriceText(price.UnitCp), Foreground = Gold, FontSize = 11, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                DockPanel.SetDock(value, Dock.Right);
+                row.Children.Add(value);
+            }
             var slot = new TextBlock { Text = drop.Slot ?? "", Foreground = Dim, FontSize = 11, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(slot, Dock.Right);
             row.Children.Add(slot);
@@ -343,10 +359,16 @@ public partial class ItemSearchOverlay : OverlayWindow
         Card.Children.Add(block);
     }
 
-    private void AddPair(string label, string value, Panel? into = null)
+    /// <summary>A unit price; stack items can be worth under a copper each ("0.33c").</summary>
+    private static string PriceText(double cp) =>
+        cp >= 1 ? CoinFormat.Format((long)Math.Round(cp)) : $"{cp:0.##}c";
+
+    private void AddPair(string label, string value, Panel? into = null) => AddPair(label, value, Text, into);
+
+    private void AddPair(string label, string value, Brush valueBrush, Panel? into = null)
     {
         var dock = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
-        var v = new TextBlock { Text = value, Foreground = Text, FontSize = 12.5, FontWeight = FontWeights.SemiBold };
+        var v = new TextBlock { Text = value, Foreground = valueBrush, FontSize = 12.5, FontWeight = FontWeights.SemiBold };
         DockPanel.SetDock(v, Dock.Right);
         dock.Children.Add(v);
         dock.Children.Add(new TextBlock { Text = label, Foreground = Dim, FontSize = 12.5 });

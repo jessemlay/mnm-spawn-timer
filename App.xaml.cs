@@ -55,6 +55,20 @@ public partial class App : Application
     public SessionStats Session { get; } = new();
     public string LedgerStatus => _ledger?.Status ?? "Off";
 
+    /// <summary>Your merchant sales (prices for the meter and lookup cards); null if the database couldn't open.</summary>
+    public SalesDb? Sales { get; private set; }
+
+    /// <summary>Format check for the Ledger (new entry types, unreadable entries after a patch).</summary>
+    public LedgerHealth LedgerHealth { get; } = new();
+
+    private bool _salesBackfillStarted;
+    private string _salesStatus = "";
+
+    /// <summary>One line for Settings ▸ Game data.</summary>
+    public string SalesSummary => Sales == null
+        ? "Sales database unavailable" + (_salesStatus.Length > 0 ? $": {_salesStatus}" : ".")
+        : $"{Sales.SaleCount} sales, {Sales.PricedItemCount} items priced{(_salesStatus.Length > 0 ? $" · {_salesStatus}" : "")}. ({Sales.FilePath})";
+
     private SpawnTimerState? ActiveTimer =>
         Timers.Count == 0 ? null : Timers[Math.Clamp(_activeIndex, 0, Timers.Count - 1)];
 
@@ -86,6 +100,7 @@ public partial class App : Application
 
         _appStart = DateTimeOffset.Now;
         Settings = SettingsStore.Load();
+        OpenSalesDb();
 
         _timerOverlay = new TimerOverlay(Timers);
         _meterOverlay = new MeterOverlay();
@@ -114,6 +129,7 @@ public partial class App : Application
         {
             if (_hook != null) _hook.Capture = open ? CaptureKey : null;
         };
+        _itemLookup.PriceOf = item => Sales?.TryGetPrice(item);
         _ = _itemLookup.PreloadIndexAsync();
 
         CreateTray();
@@ -247,6 +263,7 @@ public partial class App : Application
     {
         _tick?.Stop();
         _ledger?.Dispose();
+        Sales?.Dispose();
         _hook?.Dispose();
         if (_tray != null)
         {
@@ -284,6 +301,8 @@ public partial class App : Application
             // Replay recent history so party size is known; SessionStats ignores loot before the session start.
             _ledger = new LedgerWatcher(folder, _appStart.AddHours(-12), Dispatcher);
             _ledger.EventsArrived += OnLedgerEvents;
+            _ledger.IssuesFound += OnLedgerIssues;
+            _ = BackfillSalesAsync();
         }
 
         _lastMeterRefresh = DateTime.MinValue;
@@ -481,7 +500,7 @@ public partial class App : Application
         string mobsPath;
         try
         {
-            mobsPath = SessionExport.Write(Session, path);
+            mobsPath = SessionExport.Write(Session, path, Sales == null ? null : Sales.UnitPrice);
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
         {
@@ -551,7 +570,8 @@ public partial class App : Application
         if (now - _lastMeterRefresh >= TimeSpan.FromSeconds(1) && _meterOverlay is { IsVisible: true })
         {
             _lastMeterRefresh = now;
-            _meterOverlay.Refresh(Session, Settings.Meter, Settings.Ledger.Enabled, LedgerStatus);
+            _meterOverlay.Refresh(Session, Settings.Meter, Settings.Ledger.Enabled, LedgerStatus,
+                Sales == null ? null : Sales.UnitPrice);
         }
     }
 
@@ -643,9 +663,61 @@ public partial class App : Application
         return matched;
     }
 
+    private void OpenSalesDb()
+    {
+        try
+        {
+            Sales = SalesDb.Open();
+            // New prices re-value the meter's loot and the lookup cards.
+            Sales.PricesChanged += () => Dispatcher.InvokeAsync(() => _lastMeterRefresh = DateTime.MinValue);
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException
+                                       or UnauthorizedAccessException or DllNotFoundException or TypeInitializationException)
+        {
+            Sales = null;
+            _salesStatus = ex.Message;
+            // Runs before the overlays exist; show the banner once startup is done.
+            var message = $"Item values are off this run: {ex.Message}";
+            Dispatcher.BeginInvoke(() => Banner(AlertKind.Info, "Sales database unavailable", message), DispatcherPriority.ApplicationIdle);
+        }
+    }
+
+    /// <summary>Once per run: import every merchant sale already in the Ledger files (all characters) in the background.</summary>
+    private async Task BackfillSalesAsync()
+    {
+        if (Sales == null || _salesBackfillStarted) return;
+        _salesBackfillStarted = true;
+        _salesStatus = "reading your Ledger history…";
+        try
+        {
+            var added = await Sales.BackfillAsync(LedgerWatcher.GameDataRoot);
+            _salesStatus = added > 0 ? $"{added} sales imported from your Ledger history" : "";
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException or UnauthorizedAccessException)
+        {
+            _salesStatus = "history import failed: " + ex.Message;
+        }
+        _lastMeterRefresh = DateTime.MinValue;
+    }
+
+    private void OnLedgerIssues(IReadOnlyList<LedgerIssue> issues)
+    {
+        foreach (var (title, message) in LedgerHealth.Record(issues, _appStart))
+            Banner(AlertKind.Info, title, message);
+    }
+
     private void OnLedgerEvents(IReadOnlyList<LedgerEvent> events)
     {
         var now = DateTime.UtcNow;
+        LedgerHealth.Observe(events);
+        try
+        {
+            Sales?.Import(events);
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException)
+        {
+            _salesStatus = "couldn't save a sale: " + ex.Message;
+        }
         var historyChanged = false;
         foreach (var e in events)
         {

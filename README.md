@@ -121,6 +121,11 @@ once a second and enables:
   Per-hour rates follow your recent pace (last ~10 minutes, adjustable), fade when you stop looting, and reach 0
   after about 40 minutes without loot. Recent loot entries show their age and drop off after 15 minutes (adjustable). Other rows:
   items looted, levels gained, top mobs, recent loot (including party members' loot). Every row is optional.
+- **Item value**: your looted items priced from what **you** sold them for to merchants, e.g.
+  "Item value ≈ 1s 93c (5 of 6 priced)", plus a **Coin + items** total and per-hour rate. An item counts once you've
+  sold one; selling a new kind of item re-values the ones already looted that session.
+- **Sell prices in the lookup**: the item card shows "Sells for 1s 50c" (your latest sale), and the mob card shows
+  prices next to each drop you've sold before.
 - **Item drop alerts**: a banner and sound when a listed item is looted by you or your party.
   Patterns: `Exact Name`, `Head of*`, `*Longbow`, `*Bloodynose*`.
 - **Named mobs**: capitalized corpse names (General Overlord Bloodynose, not "a Bloodynose sergeant") are treated
@@ -139,6 +144,22 @@ because the Ledger has no locations and the same mob may die elsewhere. Under th
 (e.g. `PH cycle 2 · named 47m ago`). This history survives restarts and is filled in from today's Ledger when the app starts.
 
 Banners stack (up to 4), fade out after a set time and can be dragged anywhere while the overlays are unlocked.
+
+### Merchant sales database
+
+Every sale to a merchant (Ledger `act_24`) is kept in **`Documents\Spawn Timer\sales.db`** (SQLite), next to your
+settings, so it survives reinstalls and the game pruning old Ledger files. On first run it imports every sale already in
+your Ledger files (all characters and servers); after that each new sale is added as it happens. Prices are shared
+across characters and use each item's **latest** sale (per item, for stacks). Settings ▸ Game data shows how many
+sales and items it holds. You can open the file with any SQLite viewer (e.g. DB Browser for SQLite); the `sales`
+table has one row per sale.
+
+### Ledger check (after patches)
+
+Patches can change the Ledger format (0.30.3 added an empty `f10` field to every entry). Spawn Timer checks every
+entry it reads and shows **one banner** if something looks off: a new kind of entry it doesn't know, or entries whose
+coin, item or price it can't read. Settings ▸ Game data ▸ **Ledger check** shows the last entry, today's counts and
+any problems, and `%LOCALAPPDATA%\SpawnTimer\ledger-health.log` keeps the details to send along with a bug report.
 
 ### Adding drop alerts from a zone
 
@@ -164,6 +185,9 @@ Tray icon ▸ **Export session to CSV…** (or Settings ▸ Overlays). It saves 
 - `MnM session <date time>_mobs.csv`: one row per mob, with corpses looted, items looted (party and yours),
   your coin and first/last seen, plus session totals.
 
+Looted items get a **vendor value** column (your sale price × quantity) when you've sold that item before, and the
+summary adds your total item value.
+
 A session **follows the game**: it starts when Monsters & Memories launches and ends (totals frozen) when it closes. A loot after 45 minutes with none (adjustable) also starts a new one, for when the game is left running. The meter header shows when the session started, e.g. "since 12:22 PM · 29m". To start one by hand, use **Restart session**: it's on the meter while the overlays are unlocked (tray click, Ctrl+Alt+0, or hold Ctrl+Shift), and in the tray menu. Export first if you want the old session's CSV.
 
 What the Ledger **cannot** give you:
@@ -179,6 +203,8 @@ ledger files counts. Timers and hotkeys don't read anything from the game.
 ## Files
 
 - Settings: `Documents\Spawn Timer\settings.json`
+- Merchant sales: `Documents\Spawn Timer\sales.db` (SQLite)
+- Caches (wiki items, zones, mob pictures) and `ledger-health.log`: `%LOCALAPPDATA%\SpawnTimer\`
 - `Native/`: overlay window styles and the keyboard hook
 - `Core/`: timers, Ledger parsing, session stats, alerts
 - `UI/`: overlays and the Settings window

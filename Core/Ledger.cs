@@ -13,6 +13,27 @@ namespace SpawnTimer.Core;
 
 public enum LedgerKind { Other, ItemLoot, CoinLoot, VendorSale, LevelUp, Party }
 
+public enum LedgerIssueKind
+{
+    /// <summary>An action code the app doesn't know (a patch added a new kind of entry).</summary>
+    UnknownAction,
+    /// <summary>An entry without a readable action or time; it's skipped.</summary>
+    BadEntry,
+    /// <summary>The entry's details (f03) aren't readable JSON.</summary>
+    BadPayload,
+    /// <summary>Readable, but a value the app relies on is missing or in a new format (item name, coin, price).</summary>
+    MissingData,
+    /// <summary>Entries carry a field the app doesn't know (e.g. f10 in 0.30.3). Harmless on its own; logged only.</summary>
+    NewField,
+}
+
+/// <summary>Something in a Ledger entry the parser couldn't fully read, for the Ledger health check.</summary>
+/// <param name="Key">Identifies the entry, so a re-read file doesn't report it twice.</param>
+public sealed record LedgerIssue(string Key, LedgerIssueKind Kind, string Detail, DateTimeOffset? Time)
+{
+    public bool Serious => Kind != LedgerIssueKind.NewField;
+}
+
 /// <summary>
 /// One entry from the game's Ledger files
 /// (%USERPROFILE%\AppData\LocalLow\Niche Worlds Cult\Monsters and Memories\&lt;server&gt;\&lt;character&gt;\Ledger\*.json).
@@ -28,6 +49,8 @@ public sealed class LedgerEvent
     public string Zone { get; set; } = "";
     public string Actor { get; set; } = "";
     public string Owner { get; set; } = "";
+    /// <summary>Server folder the entry came from (e.g. "tilustra"); set by whoever read the file.</summary>
+    public string Server { get; set; } = "";
     public bool IsMine => string.Equals(Actor, Owner, StringComparison.OrdinalIgnoreCase);
     /// <summary>The player named in party and trade entries (f02 "name_…").</summary>
     public string? Subject { get; set; }
@@ -47,27 +70,54 @@ public static class LedgerParser
 {
     private static readonly Regex CoinWords = new(@"(\d+)\s*(platinum|gold|silver|copper)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static List<LedgerEvent> Parse(string json)
+    /// <summary>Action codes seen in the Ledger so far (0.30.x); anything else is reported as new.</summary>
+    private static readonly HashSet<string> KnownActions = new(StringComparer.Ordinal)
+    {
+        "act_01", "act_02", "act_11", "act_12", "act_13", "act_14", "act_15", "act_16", "act_20", "act_24",
+        "act_31", "act_32", "act_33", "act_34", "act_35",
+    };
+
+    /// <summary>Entry fields seen so far (f10 arrived with 0.30.3, always empty so far).</summary>
+    private static readonly HashSet<string> KnownFields = new(StringComparer.Ordinal)
+    {
+        "f01", "f02", "f03", "f04", "f05", "f06", "f07", "f08", "f09", "f10",
+    };
+
+    /// <param name="issues">If given, collects anything the parser couldn't fully read (see <see cref="LedgerIssue"/>).</param>
+    public static List<LedgerEvent> Parse(string json, List<LedgerIssue>? issues = null)
     {
         var result = new List<LedgerEvent>();
         using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("c01", out var list) || list.ValueKind != JsonValueKind.Array) return result;
+        if (!doc.RootElement.TryGetProperty("c01", out var list) || list.ValueKind != JsonValueKind.Array)
+        {
+            issues?.Add(new LedgerIssue("file|no-c01", LedgerIssueKind.BadEntry, "file has no entry list (c01)", null));
+            return result;
+        }
         foreach (var entry in list.EnumerateArray())
         {
-            var ev = ParseEntry(entry);
+            var ev = ParseEntry(entry, issues);
             if (ev != null) result.Add(ev);
         }
         return result;
     }
 
-    private static LedgerEvent? ParseEntry(JsonElement e)
+    private static LedgerEvent? ParseEntry(JsonElement e, List<LedgerIssue>? issues)
     {
-        if (e.ValueKind != JsonValueKind.Object) return null;
+        if (e.ValueKind != JsonValueKind.Object)
+        {
+            issues?.Add(new LedgerIssue("bad|" + e.GetRawText(), LedgerIssueKind.BadEntry, "entry isn't an object", null));
+            return null;
+        }
         var action = Str(e, "f01");
         var f02 = Str(e, "f02");
         var f03 = Str(e, "f03");
         var time = Str(e, "f04");
-        if (!DateTimeOffset.TryParse(time, CultureInfo.InvariantCulture, DateTimeStyles.None, out var at)) return null;
+        if (action.Length == 0 || !DateTimeOffset.TryParse(time, CultureInfo.InvariantCulture, DateTimeStyles.None, out var at))
+        {
+            issues?.Add(new LedgerIssue("bad|" + e.GetRawText(), LedgerIssueKind.BadEntry,
+                action.Length == 0 ? "entry has no action (f01)" : $"{action}: unreadable time (f04 \"{time}\")", null));
+            return null;
+        }
 
         var zone = Str(e, "f05");
         var ev = new LedgerEvent
@@ -84,7 +134,22 @@ public static class LedgerParser
             && f02.StartsWith("name_", StringComparison.Ordinal))
             ev.Subject = Decode(f02[5..]);
 
-        if (!f03.StartsWith('{')) return ev;
+        if (issues != null)
+        {
+            if (!KnownActions.Contains(action))
+                issues.Add(new LedgerIssue(ev.Key, LedgerIssueKind.UnknownAction, action, at));
+            var extra = string.Join(", ", e.EnumerateObject().Select(f => f.Name).Where(n => !KnownFields.Contains(n)));
+            if (extra.Length > 0)
+                issues.Add(new LedgerIssue(ev.Key + "|fields", LedgerIssueKind.NewField, $"{action}: {extra}", at));
+        }
+
+        if (!f03.StartsWith('{'))
+        {
+            // These always carry details; without them the entry is useless to the meter.
+            if (action is "act_13" or "act_14" or "act_24")
+                issues?.Add(new LedgerIssue(ev.Key, LedgerIssueKind.BadPayload, $"{action}: no details (f03)", at));
+            return ev;
+        }
         try
         {
             using var payload = JsonDocument.Parse(f03);
@@ -107,13 +172,16 @@ public static class LedgerParser
                     ev.Corpse = NullIfEmpty(Decode(Str(d, "d02")));
                     ev.Item = Str(d, "d04");
                     ev.Quantity = Int(d, "d01") ?? 1;
+                    if (ev.Item.Length == 0) Missing("item name (d04)");
                     break;
                 case "act_14":
                     ev.Kind = LedgerKind.CoinLoot;
                     ev.Corpse = NullIfEmpty(Decode(Str(d, "d13")));
                     // Use the coin breakdown (d12). The d11 "total" disagrees with it whenever silver is present
                     // (1 silver 8 copper is logged as 18), so it's only a fallback.
-                    ev.CoinTotalCp = ParseCoinCsv(Decode(Str(d, "d12"))) ?? Int(d, "d11") ?? 0;
+                    var breakdown = ParseCoinCsv(Decode(Str(d, "d12")));
+                    if (breakdown == null) Missing("coin breakdown (d12)");
+                    ev.CoinTotalCp = breakdown ?? Int(d, "d11") ?? 0;
                     ev.CoinKind = Decode(Str(d, "d14"));
                     ev.CoinShareCp = ParseCoinCsv(Decode(Str(d, "d15")));
                     break;
@@ -121,7 +189,10 @@ public static class LedgerParser
                     ev.Kind = LedgerKind.VendorSale;
                     ev.Item = Str(d, "d04");
                     ev.Quantity = Int(d, "d01") ?? 1;
-                    ev.CoinTotalCp = ParseCoinWords(Decode(Str(d, "d03")));
+                    var priceText = Decode(Str(d, "d03"));
+                    ev.CoinTotalCp = ParseCoinWords(priceText);
+                    if (ev.Item.Length == 0) Missing("item name (d04)");
+                    if (!CoinWords.IsMatch(priceText)) Missing("sale price (d03)");
                     break;
                 case "act_01":
                     ev.Kind = LedgerKind.LevelUp;
@@ -140,8 +211,11 @@ public static class LedgerParser
         catch (JsonException)
         {
             // Unknown payload shape; keep the bare event.
+            issues?.Add(new LedgerIssue(ev.Key, LedgerIssueKind.BadPayload, $"{action}: details (f03) aren't readable", at));
         }
         return ev;
+
+        void Missing(string what) => issues?.Add(new LedgerIssue(ev.Key, LedgerIssueKind.MissingData, $"{action}: {what}", at));
     }
 
     /// <summary>The game base64-encodes names; fall back to the raw text when it isn't valid base64.</summary>
@@ -250,7 +324,12 @@ public sealed class LedgerWatcher : IDisposable
     private readonly Timer _timer;
     private readonly Dictionary<string, (DateTime Write, long Length)> _stamps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _seen = new();
+    private readonly HashSet<string> _seenIssues = new();
+    /// <summary>Files that failed to parse, with the stamp and how many polls in a row (mid-write reads fail once).</summary>
+    private readonly Dictionary<string, ((DateTime, long) Stamp, int Fails)> _badReads = new(StringComparer.OrdinalIgnoreCase);
+    private const int UnreadableAfter = 10;
     private string? _dir;
+    private string _server = "";
     private DateTime _nextDirScan = DateTime.MinValue;
     private int _busy;
     private volatile bool _disposed;
@@ -272,6 +351,12 @@ public sealed class LedgerWatcher : IDisposable
 
     public event Action<IReadOnlyList<LedgerEvent>>? EventsArrived;
 
+    /// <summary>Newly seen problems reading the Ledger (each entry reported once), on the UI thread.</summary>
+    public event Action<IReadOnlyList<LedgerIssue>>? IssuesFound;
+
+    /// <summary>The server folder name for a Ledger folder (…\&lt;server&gt;\&lt;character&gt;\Ledger).</summary>
+    public static string ServerOf(string ledgerDir) => Directory.GetParent(ledgerDir)?.Parent?.Name ?? "";
+
     private void Poll()
     {
         if (_disposed || Interlocked.Exchange(ref _busy, 1) == 1) return;
@@ -284,7 +369,9 @@ public sealed class LedgerWatcher : IDisposable
                 if (!string.Equals(found, _dir, StringComparison.OrdinalIgnoreCase))
                 {
                     _dir = found;
+                    _server = found == null ? "" : ServerOf(found);
                     _stamps.Clear();
+                    _badReads.Clear();
                 }
             }
 
@@ -297,6 +384,7 @@ public sealed class LedgerWatcher : IDisposable
             }
 
             var batch = new List<LedgerEvent>();
+            var newIssues = new List<LedgerIssue>();
             foreach (var file in Directory.EnumerateFiles(_dir, "*.json"))
             {
                 var info = new FileInfo(file);
@@ -316,20 +404,32 @@ public sealed class LedgerWatcher : IDisposable
                 }
 
                 List<LedgerEvent> events;
+                var issues = new List<LedgerIssue>();
                 try
                 {
-                    events = LedgerParser.Parse(text);
+                    events = LedgerParser.Parse(text, issues);
                 }
                 catch (JsonException)
                 {
-                    continue; // Caught mid-write; the unchanged stamp makes us retry next poll.
+                    // Usually caught mid-write: the stamp isn't stored, so it's retried next poll. A file that stays
+                    // unreadable with the same stamp is a real format problem.
+                    var fails = _badReads.TryGetValue(file, out var bad) && bad.Stamp == stamp ? bad.Fails + 1 : 1;
+                    _badReads[file] = (stamp, fails);
+                    if (fails == UnreadableAfter)
+                        newIssues.Add(new LedgerIssue($"file|{file}|{stamp}", LedgerIssueKind.BadEntry,
+                            $"{Path.GetFileName(file)} isn't readable JSON", null));
+                    continue;
                 }
 
+                _badReads.Remove(file);
                 _stamps[file] = stamp;
                 foreach (var ev in events)
                 {
+                    ev.Server = _server;
                     if (_seen.Add(ev.Key) && ev.Time >= _since) batch.Add(ev);
                 }
+                foreach (var issue in issues)
+                    if (_seenIssues.Add(issue.Key + "|" + issue.Kind + "|" + issue.Detail)) newIssues.Add(issue);
             }
 
             Status = "Watching " + Describe(_dir);
@@ -338,6 +438,7 @@ public sealed class LedgerWatcher : IDisposable
                 batch.Sort((a, b) => a.Time.CompareTo(b.Time));
                 _ui.InvokeAsync(() => EventsArrived?.Invoke(batch));
             }
+            if (newIssues.Count > 0) _ui.InvokeAsync(() => IssuesFound?.Invoke(newIssues));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

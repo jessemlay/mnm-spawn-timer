@@ -30,7 +30,9 @@ public partial class MeterOverlay : OverlayWindow
         UpdateBackground();
     }
 
-    public void Refresh(SessionStats stats, MeterSettings meter, bool ledgerEnabled, string ledgerStatus)
+    /// <param name="unitPrice">Merchant price per item in copper from your own sales (null = never sold), or null to hide value rows.</param>
+    public void Refresh(SessionStats stats, MeterSettings meter, bool ledgerEnabled, string ledgerStatus,
+        Func<string, double?>? unitPrice = null)
     {
         Rows.Children.Clear();
         HeaderRight.Text = meter.ShowSessionTime ? SessionLabel(stats) : "";
@@ -72,6 +74,20 @@ public partial class MeterOverlay : OverlayWindow
             AddRow(label, meter.ShowCoinRate ? $"{CoinFormat.Format(stats.LootCoinCp)}   {rate}" : CoinFormat.Format(stats.LootCoinCp));
         }
         if (meter.ShowItems) AddRow("Items looted", stats.ItemsLooted.ToString(CultureInfo.InvariantCulture));
+        if (unitPrice != null && stats.ItemsLooted > 0 && (meter.ShowItemValue || meter.ShowValueRate))
+        {
+            // Priced from what you've sold each item for; items you've never sold count once you sell one.
+            var (value, priced, total) = stats.ItemValue(unitPrice);
+            if (meter.ShowItemValue)
+                AddRow("Item value", priced == 0
+                    ? $"? ({total} unpriced)"
+                    : $"≈ {CoinFormat.Format((long)Math.Round(value))}   ({priced} of {total} priced)");
+            if (meter.ShowValueRate)
+            {
+                var rate = RateText($"({CoinFormat.Format((long)Math.Round(stats.ValuePerHour(window, now, unitPrice)))}/hr)");
+                AddRow("Coin + items", $"{CoinFormat.Format(stats.LootCoinCp + (long)Math.Round(value))}   {rate}");
+            }
+        }
         if (meter.ShowLevels && (stats.LevelsGained > 0 || stats.Level.HasValue))
             AddRow("Levels gained", stats.Level.HasValue ? $"{stats.LevelsGained}  (now {stats.Level})" : $"{stats.LevelsGained}");
 

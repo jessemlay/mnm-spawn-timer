@@ -59,6 +59,8 @@ public partial class SettingsWindow : Window
     private void UpdateStatus()
     {
         LedgerStatus.Text = _settings.Ledger.Enabled ? App.Instance.LedgerStatus : "Off";
+        LedgerHealthText.Text = _settings.Ledger.Enabled ? App.Instance.LedgerHealth.Describe() : "Off";
+        SalesSummaryText.Text = App.Instance.SalesSummary;
         UpdateStatusText.Text = App.Instance.UpdateStatus;
     }
 

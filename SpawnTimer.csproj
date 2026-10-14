@@ -11,10 +11,12 @@
     <AssemblyName>SpawnTimer</AssemblyName>
     <RootNamespace>SpawnTimer</RootNamespace>
     <!-- CI appends -ci.N to this; a pushed tag like v1.2.0 sets the full version. -->
-    <VersionPrefix>1.5.8</VersionPrefix>
+    <VersionPrefix>1.6.0</VersionPrefix>
     <Product>Spawn Timer for Monsters &amp; Memories</Product>
     <!-- Exe icon: Explorer, desktop/Start Menu shortcuts and the uninstall entry all use it. -->
     <ApplicationIcon>Assets\SpawnTimer.ico</ApplicationIcon>
+    <!-- Single-file publish: pack SQLite's native e_sqlite3.dll into the exe so the installer stays one file. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,6 +26,10 @@
     <Compile Remove="tools\**" />
     <None Remove="tools\**" />
     <Page Remove="tools\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
   </ItemGroup>
 
 </Project>

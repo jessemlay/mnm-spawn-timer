@@ -97,6 +97,44 @@ public sealed class SessionStats
         return weighted / (tau * (1 - Math.Exp(-elapsedHours / tau)));
     }
 
+    /// <summary>
+    /// Merchant value of the items you looted this session at <paramref name="unitPrice"/> (copper each, null = never
+    /// sold). Priced when asked, so selling a new kind of item values every one already looted.
+    /// </summary>
+    public (double ValueCp, int Priced, int Total) ItemValue(Func<string, double?> unitPrice)
+    {
+        double value = 0;
+        int priced = 0, total = 0;
+        foreach (var e in MyItemLoots())
+        {
+            var qty = Math.Max(1, e.Quantity);
+            total += qty;
+            if (unitPrice(e.Item!) is not { } each) continue;
+            priced += qty;
+            value += each * qty;
+        }
+        return (value, priced, total);
+    }
+
+    /// <summary>Coin plus item value per hour, weighted toward recent loot like <see cref="CoinPerHour"/>.</summary>
+    public double ValuePerHour(TimeSpan window, DateTimeOffset now, Func<string, double?> unitPrice)
+    {
+        var samples = new List<(DateTimeOffset Time, double Value)>(_coinSamples);
+        var itemTotal = 0.0;
+        foreach (var e in MyItemLoots())
+            if (unitPrice(e.Item!) is { } each && each > 0)
+            {
+                var value = each * Math.Max(1, e.Quantity);
+                samples.Add((e.Time, value));
+                itemTotal += value;
+            }
+        samples.Sort((a, b) => a.Time.CompareTo(b.Time));
+        return RecentRate(samples, LootCoinCp + itemTotal, window, now);
+    }
+
+    private IEnumerable<LedgerEvent> MyItemLoots() =>
+        _events.Where(e => e.Kind == LedgerKind.ItemLoot && e.IsMine && !string.IsNullOrEmpty(e.Item));
+
     public IEnumerable<KeyValuePair<string, int>> TopMobs(int count) =>
         _mobs.Values.Where(m => m.Corpses > 0)
             .OrderByDescending(m => m.Corpses).ThenBy(m => m.Name)

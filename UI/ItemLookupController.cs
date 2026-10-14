@@ -103,6 +103,9 @@ public sealed class ItemLookupController
 
     public bool IsOpen { get; private set; }
 
+    /// <summary>Your merchant price for an item (from the sales database), for the cards.</summary>
+    public Func<string, ItemPrice?>? PriceOf { get; set; }
+
     /// <summary>Raised when the box opens or closes (the app turns key capture on/off).</summary>
     public event Action<bool>? OpenChanged;
 
@@ -374,6 +377,7 @@ public sealed class ItemLookupController
             Mob = mobs && _results.Count > 0 ? _mobResults[Math.Clamp(_selected, 0, _mobResults.Count - 1)] : null,
             MobImage = mobs ? _mobImage : null,
             UsableByYou = mobs ? UsableByYou() : null,
+            PriceOf = PriceOf,
             CardMessage = _cardMessage,
             YourClass = _settings.ItemLookup.YourClass?.Trim() ?? "",
         });
