@@ -43,6 +43,12 @@ public sealed class ItemLookupController
     /// <summary>Mob lookup: the highlighted mob's cached wiki thumbnail, or null.</summary>
     private string? _mobImage;
     private string _zoneName = "";
+    /// <summary>The Ledger zone the app last asked for (retried when a load failed).</summary>
+    private string? _requestedZone;
+    /// <summary>"Loading Fallen Pass…" or why it failed; shown as the hint while the zone has no data.</summary>
+    private string _zoneStatus = "";
+    private string? _failedZone;
+    private DateTime _zoneRetryAfter;
     private string _zoneCode = "";
     private string _text = "";
     private string _ghost = "";
@@ -168,6 +174,7 @@ public sealed class ItemLookupController
         _overlay.EditMode = true; // clickable rows and draggable, but still never takes focus
         OpenChanged?.Invoke(true);
         if (ItemDb.Index == null) _ = PreloadIndexAsync();
+        if (_requestedZone != null && _zoneCode != _requestedZone) _ = OnZoneAsync(_requestedZone);
     }
 
     public void Close()
@@ -352,7 +359,9 @@ public sealed class ItemLookupController
     {
         var mobs = _mode == LookupMode.Mobs;
         var zoneCount = mobs ? _mobs.Count(m => m.InZone) : _zoneItems.Count;
-        var hint = _status.Length > 0 && !mobs
+        var hint = _text.Length == 0 && zoneCount == 0 && _zoneStatus.Length > 0
+            ? _zoneStatus
+            : _status.Length > 0 && !mobs
             ? _status
             : _text.Length == 0 && zoneCount > 0
                 ? mobs
@@ -478,27 +487,39 @@ public sealed class ItemLookupController
     /// </summary>
     public async Task OnZoneAsync(string ledgerZoneCode)
     {
-        if (string.IsNullOrWhiteSpace(ledgerZoneCode) || ledgerZoneCode == _zoneCode) return;
+        if (string.IsNullOrWhiteSpace(ledgerZoneCode)) return;
+        _requestedZone = ledgerZoneCode;
+        // Already loaded or loading. A failed load clears _zoneCode, so a later call (the next loot, or opening the
+        // lookup) retries it, at most once a minute.
+        if (ledgerZoneCode == _zoneCode) return;
+        if (ledgerZoneCode == _failedZone && DateTime.UtcNow < _zoneRetryAfter) return;
         _zoneCode = ledgerZoneCode;
         _zoneName = ZoneNames.Tidy(ledgerZoneCode);
+        _zoneItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _zoneMobs = new List<ZoneMob>();
+        _zoneStatus = $"Loading {_zoneName}…";
+        if (IsOpen) Refresh(scheduleDetails: false);
         try
         {
             var zones = await ZoneSources.ListZonesAsync(useWiki: true, useDrops: false, refresh: false, CancellationToken.None);
+            if (_zoneCode != ledgerZoneCode) return; // moved on to another zone meanwhile
             var zone = ZoneNames.MatchLedgerZone(ledgerZoneCode, zones);
             if (zone == null)
             {
-                _zoneItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                _zoneMobs = new List<ZoneMob>();
+                _zoneStatus = $"{_zoneName} isn't on the wiki's zone list yet · type to search every item";
                 if (IsOpen) Refresh(scheduleDetails: false);
                 return;
             }
             _zoneName = zone.Name;
             var results = await ZoneSources.LoadZoneAsync(zone, useWiki: true, useDrops: false, refresh: false,
                 new Progress<string>(_ => { }), CancellationToken.None);
+            if (_zoneCode != ledgerZoneCode) return;
             _zoneMobs = results.SelectMany(r => r.Mobs).ToList();
             var titles = _zoneMobs.SelectMany(m => m.Drops).Select(d => d.Name)
                 .Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             _zoneItems = new HashSet<string>(titles, StringComparer.OrdinalIgnoreCase);
+            _zoneStatus = _zoneMobs.Count == 0 ? $"No mobs or drops listed for {_zoneName} yet · type to search every item" : "";
+            _failedZone = null;
             if (_mode == LookupMode.Mobs) RebuildMobs();
             if (IsOpen) Refresh(scheduleDetails: false);
 
@@ -508,9 +529,15 @@ public sealed class ItemLookupController
                 if (IsOpen) Refresh(scheduleDetails: false);
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            _zoneCode = ""; // try again on the next zone event
+            // Network or source trouble (or anything unexpected): say so instead of showing an empty list.
+            if (_zoneCode == ledgerZoneCode) _zoneCode = "";
+            _failedZone = ledgerZoneCode;
+            _zoneRetryAfter = DateTime.UtcNow.AddMinutes(1);
+            var why = ex is HttpRequestException or TaskCanceledException ? "couldn't reach the wiki or MnM Archive" : ex.Message;
+            _zoneStatus = $"Couldn't load {_zoneName} ({why}) · retrying in a minute";
+            if (IsOpen) Refresh(scheduleDetails: false);
         }
     }
 }

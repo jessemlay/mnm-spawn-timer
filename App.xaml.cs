@@ -34,7 +34,6 @@ public partial class App : Application
     private DispatcherTimer? _tick;
     private DispatcherTimer? _updateTimer;
     private ItemLookupController? _itemLookup;
-    private string _lastLedgerZone = "";
     // Recent Ledger entries, so a new session can be rebuilt from any start time (e.g. when the game launched).
     private readonly List<LedgerEvent> _ledgerHistory = new();
     private DispatcherTimer? _gameWatch;
@@ -806,12 +805,9 @@ public partial class App : Application
         if (_ledgerHistory.Count > 0 && _ledgerHistory[0].Time < cutoff) _ledgerHistory.RemoveAll(x => x.Time < cutoff);
 
         // Zone changes (seen on loot entries, including history replayed at startup) preload that zone's items.
+        // The lookup ignores a zone it already has, and retries one whose load failed.
         var zone = events.LastOrDefault(e => e.Zone.Length > 0)?.Zone;
-        if (zone != null && zone != _lastLedgerZone)
-        {
-            _lastLedgerZone = zone;
-            _ = _itemLookup?.OnZoneAsync(zone);
-        }
+        if (zone != null) _ = _itemLookup?.OnZoneAsync(zone);
     }
 
     private bool BackfillNamedSeen(LedgerEvent e)
