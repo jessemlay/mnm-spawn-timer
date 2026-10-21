@@ -488,13 +488,14 @@
             <TabItem Header="Updates">
                 <StackPanel Margin="10">
                     <CheckBox IsChecked="{Binding Updates.CheckForUpdates}"
-                              Content="Check for updates when the app starts and every 6 hours" />
+                              Content="Check for updates when the app starts and every 2 hours" />
                     <CheckBox IsChecked="{Binding Updates.InstallAutomatically}" Margin="0,4,0,0"
-                              Content="Install updates automatically when the app starts" />
+                              Content="Install updates automatically" />
                     <TextBlock Style="{StaticResource Hint}" Margin="22,2,0,0">
-                        Updates only auto-install at startup, never in the middle of a session. Windows asks for admin
-                        permission once, then the app restarts on the new version with your settings. Updates found
-                        later show a banner and a tray item ("Install update") instead.
+                        Never while you're playing. An update found with the game closed installs right away; one found
+                        mid-game installs 20 seconds after you close the game. Windows asks for admin permission once per
+                        update (the app lives in Program Files), then the app restarts on the new version with your
+                        settings. Decline the prompt and it waits until you choose Tray ▸ Install update.
                     </TextBlock>
 
                     <StackPanel Orientation="Horizontal" Margin="0,14,0,0">

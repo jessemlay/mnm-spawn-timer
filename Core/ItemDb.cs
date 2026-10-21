@@ -37,6 +37,14 @@ public sealed class ItemDetails
     /// <summary>"Mob (Zone)" entries from the page's drop list.</summary>
     public List<string> DropsFrom { get; set; } = new();
     public DateTime FetchedUtc { get; set; }
+    /// <summary>Where the stats came from: "" for the M&amp;M Wiki, or <see cref="MnmArchive.Name"/>.</summary>
+    public string Source { get; set; } = "";
+    /// <summary>The page to open for this item (null = its M&amp;M Wiki page).</summary>
+    public string? SourceUrl { get; set; }
+
+    /// <summary>Older than the cache age: a saved copy shown because the wiki couldn't be reached.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsStale => DateTime.UtcNow - FetchedUtc >= ItemDb.CacheAge;
 
     public bool UsableBy(string classCode)
     {
@@ -53,7 +61,9 @@ public sealed class ItemDetails
 public static class ItemDb
 {
     private const string WikiApi = "https://monstersandmemories.miraheze.org/w/api.php";
-    private static readonly TimeSpan CacheAge = TimeSpan.FromDays(7);
+    public static readonly TimeSpan CacheAge = TimeSpan.FromDays(7);
+    /// <summary>Item lookups that may fall back to MnM Archive pages (one page each); bigger batches are preloads.</summary>
+    private const int ArchiveMaxPerCall = 3;
     private static readonly HttpClient Http = CreateClient();
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static readonly Dictionary<string, ItemDetails> Details = new(StringComparer.OrdinalIgnoreCase);
@@ -76,6 +86,10 @@ public static class ItemDb
     public static string WikiUrl(string title) =>
         "https://monstersandmemories.miraheze.org/wiki/" + Uri.EscapeDataString(title.Trim().Replace(' ', '_'));
 
+    /// <summary>The page to open for an item: where its stats came from, else the wiki (MnM Archive while the wiki is down).</summary>
+    public static string PageUrl(string title) =>
+        TryGetAny(title)?.SourceUrl ?? (WikiStatus.LikelyDown ? MnmArchive.ItemUrl(title) : WikiUrl(title));
+
     /// <summary>All item page titles (cached 7 days). Null until loaded.</summary>
     public static IReadOnlyList<string>? Index => _index;
 
@@ -92,19 +106,30 @@ public static class ItemDb
             catch (JsonException) { }
         }
 
+        if (WikiStatus.LikelyDown && LoadSavedIndex()) return _index!;
         var titles = new List<string>();
         string? cont = null;
-        do
+        try
         {
-            var url = $"{WikiApi}?action=query&list=embeddedin&eititle=Template:ItemBox&einamespace=0&eilimit=500&format=json&formatversion=2"
-                      + (cont != null ? "&eicontinue=" + Uri.EscapeDataString(cont) : "");
-            using var doc = JsonDocument.Parse(await Http.GetStringAsync(url, ct));
-            titles.AddRange(doc.RootElement.GetProperty("query").GetProperty("embeddedin").EnumerateArray()
-                .Select(p => p.GetProperty("title").GetString() ?? "").Where(t => t.Length > 0));
-            cont = doc.RootElement.TryGetProperty("continue", out var c) && c.TryGetProperty("eicontinue", out var ec)
-                ? ec.GetString() : null;
-            if (cont != null) await Task.Delay(300, ct); // be gentle with the wiki
-        } while (cont != null);
+            do
+            {
+                var url = $"{WikiApi}?action=query&list=embeddedin&eititle=Template:ItemBox&einamespace=0&eilimit=500&format=json&formatversion=2"
+                          + (cont != null ? "&eicontinue=" + Uri.EscapeDataString(cont) : "");
+                using var doc = JsonDocument.Parse(await Http.GetStringAsync(url, ct));
+                titles.AddRange(doc.RootElement.GetProperty("query").GetProperty("embeddedin").EnumerateArray()
+                    .Select(p => p.GetProperty("title").GetString() ?? "").Where(t => t.Length > 0));
+                cont = doc.RootElement.TryGetProperty("continue", out var c) && c.TryGetProperty("eicontinue", out var ec)
+                    ? ec.GetString() : null;
+                if (cont != null) await Task.Delay(300, ct); // be gentle with the wiki
+            } while (cont != null);
+            WikiStatus.Succeeded();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            WikiStatus.Failed();
+            if (LoadSavedIndex()) return _index!; // the saved list, however old
+            throw;
+        }
 
         _index = titles.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(t => t, StringComparer.OrdinalIgnoreCase).ToList();
         try
@@ -116,10 +141,34 @@ public static class ItemDb
         return _index;
     }
 
+    /// <summary>The saved item list regardless of age (used when the wiki is unreachable).</summary>
+    private static bool LoadSavedIndex()
+    {
+        try
+        {
+            if (!File.Exists(IndexPath)) return false;
+            var saved = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(IndexPath));
+            if (saved is not { Count: > 0 }) return false;
+            _index = saved;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     public static ItemDetails? TryGetCached(string title)
     {
         EnsureDetailsLoaded();
         lock (Details) return Details.TryGetValue(title, out var d) && DateTime.UtcNow - d.FetchedUtc < CacheAge ? d : null;
+    }
+
+    /// <summary>Any saved copy, however old.</summary>
+    public static ItemDetails? TryGetAny(string title)
+    {
+        EnsureDetailsLoaded();
+        lock (Details) return Details.TryGetValue(title, out var d) ? d : null;
     }
 
     /// <summary>(mob, zone, item) for every "drops from" entry of every cached item.</summary>
@@ -144,7 +193,11 @@ public static class ItemDb
         return i > 0 && source.EndsWith(')') ? (source[..i], source[(i + 2)..^1]) : (source, "");
     }
 
-    /// <summary>Stats for the given item titles; fetches anything not cached (50 per request).</summary>
+    /// <summary>
+    /// Stats for the given item titles: fresh saved copies, then the wiki (50 per request). If the wiki can't be
+    /// reached, saved copies of any age. A single lookup the wiki can't answer (down, or no such page) tries the
+    /// item's MnM Archive page.
+    /// </summary>
     public static async Task<Dictionary<string, ItemDetails>> GetAsync(IEnumerable<string> titles, CancellationToken ct)
     {
         EnsureDetailsLoaded();
@@ -161,41 +214,41 @@ public static class ItemDb
         await Gate.WaitAsync(ct);
         try
         {
-            foreach (var batch in missing.Chunk(50))
+            var wikiFailed = WikiStatus.LikelyDown;
+            if (!wikiFailed)
             {
-                var url = $"{WikiApi}?action=query&prop=revisions&rvprop=content&rvslots=main&redirects=1&format=json&formatversion=2&titles="
-                          + Uri.EscapeDataString(string.Join("|", batch));
-                using var doc = JsonDocument.Parse(await Http.GetStringAsync(url, ct));
-                var query = doc.RootElement.GetProperty("query");
-
-                // Map normalized/redirected titles back to what was asked for.
-                var asked = batch.ToDictionary(b => b, b => b, StringComparer.OrdinalIgnoreCase);
-                foreach (var key in new[] { "normalized", "redirects" })
+                try
                 {
-                    if (!query.TryGetProperty(key, out var arr)) continue;
-                    foreach (var m in arr.EnumerateArray())
-                    {
-                        var from = m.GetProperty("from").GetString() ?? "";
-                        var to = m.GetProperty("to").GetString() ?? "";
-                        if (asked.TryGetValue(from, out var original)) asked[to] = original;
-                    }
+                    await FetchFromWikiAsync(missing, result, ct);
+                    WikiStatus.Succeeded();
                 }
-
-                foreach (var page in query.GetProperty("pages").EnumerateArray())
+                catch (Exception ex) when (ex is HttpRequestException or JsonException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
                 {
-                    if (!page.TryGetProperty("revisions", out var revs)) continue;
-                    var title = page.GetProperty("title").GetString() ?? "";
-                    var text = revs[0].GetProperty("slots").GetProperty("main").GetProperty("content").GetString() ?? "";
-                    var details = Parse(title, text);
-                    lock (Details)
-                    {
-                        Details[title] = details;
-                        if (asked.TryGetValue(title, out var original)) Details[original] = details;
-                    }
-                    result[asked.TryGetValue(title, out var o) ? o : title] = details;
+                    WikiStatus.Failed();
+                    wikiFailed = true;
                 }
-                if (missing.Count > 50) await Task.Delay(300, ct);
             }
+
+            var stillMissing = missing.Where(t => !result.ContainsKey(t)).ToList();
+            if (wikiFailed)
+                foreach (var t in stillMissing.ToList())
+                    if (TryGetAny(t) is { } saved)
+                    {
+                        result[t] = saved;
+                        stillMissing.Remove(t);
+                    }
+
+            if (stillMissing.Count is > 0 and <= ArchiveMaxPerCall)
+                foreach (var t in stillMissing)
+                {
+                    try
+                    {
+                        if (await MnmArchive.GetItemAsync(t, ct) is not { } fromArchive) continue;
+                        lock (Details) Details[t] = fromArchive;
+                        result[t] = fromArchive;
+                    }
+                    catch (Exception ex) when (ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested)) { }
+                }
             SaveDetails();
         }
         finally
@@ -203,6 +256,45 @@ public static class ItemDb
             Gate.Release();
         }
         return result;
+    }
+
+    private static async Task FetchFromWikiAsync(List<string> missing, Dictionary<string, ItemDetails> result, CancellationToken ct)
+    {
+        foreach (var batch in missing.Chunk(50))
+        {
+            var url = $"{WikiApi}?action=query&prop=revisions&rvprop=content&rvslots=main&redirects=1&format=json&formatversion=2&titles="
+                      + Uri.EscapeDataString(string.Join("|", batch));
+            using var doc = JsonDocument.Parse(await Http.GetStringAsync(url, ct));
+            var query = doc.RootElement.GetProperty("query");
+
+            // Map normalized/redirected titles back to what was asked for.
+            var asked = batch.ToDictionary(b => b, b => b, StringComparer.OrdinalIgnoreCase);
+            foreach (var key in new[] { "normalized", "redirects" })
+            {
+                if (!query.TryGetProperty(key, out var arr)) continue;
+                foreach (var m in arr.EnumerateArray())
+                {
+                    var from = m.GetProperty("from").GetString() ?? "";
+                    var to = m.GetProperty("to").GetString() ?? "";
+                    if (asked.TryGetValue(from, out var original)) asked[to] = original;
+                }
+            }
+
+            foreach (var page in query.GetProperty("pages").EnumerateArray())
+            {
+                if (!page.TryGetProperty("revisions", out var revs)) continue;
+                var title = page.GetProperty("title").GetString() ?? "";
+                var text = revs[0].GetProperty("slots").GetProperty("main").GetProperty("content").GetString() ?? "";
+                var details = Parse(title, text);
+                lock (Details)
+                {
+                    Details[title] = details;
+                    if (asked.TryGetValue(title, out var original)) Details[original] = details;
+                }
+                result[asked.TryGetValue(title, out var o) ? o : title] = details;
+            }
+            if (missing.Count > 50) await Task.Delay(300, ct);
+        }
     }
 
     private static readonly (string Key, string Label)[] StatFields =

@@ -139,12 +139,13 @@ public partial class App : Application
         _tick.Tick += (_, _) => OnTick();
         _tick.Start();
 
-        // Update check: once shortly after startup (may auto-install), then every 6 hours (banner only).
+        // Update check: shortly after startup, then every 2 hours. Updates install themselves whenever the game
+        // isn't running (or as soon as it closes).
         var firstCheck = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         firstCheck.Tick += async (_, _) =>
         {
             firstCheck.Stop();
-            await CheckForUpdatesAsync(atStartup: true, manual: false);
+            await CheckForUpdatesAsync(manual: false);
         };
         firstCheck.Start();
         // The session follows the game: starts when mnm.exe launches, ends when it closes.
@@ -153,8 +154,8 @@ public partial class App : Application
         _gameWatch.Start();
         CheckGameState();
 
-        _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
-        _updateTimer.Tick += async (_, _) => await CheckForUpdatesAsync(atStartup: false, manual: false);
+        _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(2) };
+        _updateTimer.Tick += async (_, _) => await CheckForUpdatesAsync(manual: false);
         _updateTimer.Start();
         OnTick();
 
@@ -172,13 +173,16 @@ public partial class App : Application
     /// <summary>Shown in Settings ▸ Updates.</summary>
     public string UpdateStatus { get; private set; } = $"Spawn Timer {Updates.CurrentVersion}. Not checked yet.";
 
-    public Task CheckForUpdatesNow() => CheckForUpdatesAsync(atStartup: false, manual: true);
+    public Task CheckForUpdatesNow() => CheckForUpdatesAsync(manual: true);
+
+    /// <summary>A version whose admin prompt was declined this run; not offered automatically again until restart.</summary>
+    private string? _declinedVersion;
 
     /// <summary>
-    /// Looks for a newer GitHub release. At startup with "install automatically" on it installs right away
-    /// (before you're in the game); otherwise it announces it once with a banner and adds a tray item.
+    /// Looks for a newer GitHub release. With "install automatically" on it installs right away when the game isn't
+    /// running, or as soon as the game closes; otherwise it announces it once with a banner and adds a tray item.
     /// </summary>
-    private async Task CheckForUpdatesAsync(bool atStartup, bool manual)
+    private async Task CheckForUpdatesAsync(bool manual)
     {
         if (_updateBusy || (!manual && !Settings.Updates.CheckForUpdates)) return;
         try
@@ -194,15 +198,12 @@ public partial class App : Application
             }
 
             UpdateStatus = $"Spawn Timer {Updates.CurrentVersion}. Update available: v{update.Version} (checked {DateTime.Now:t}).";
-            if (atStartup && Settings.Updates.InstallAutomatically && !Updates.IsDevBuild)
-            {
-                await InstallUpdateAsync();
-                return;
-            }
+            if (await TryAutoInstallAsync()) return;
             if (manual || Settings.Updates.LastAnnouncedVersion != update.Version.ToString())
             {
-                Banner(AlertKind.Info, $"Update available: v{update.Version}",
-                    "Tray ▸ Install update. One admin prompt, then the app restarts with your settings.");
+                Banner(AlertKind.Info, $"Update available: v{update.Version}", AutoInstallOn
+                    ? "It installs itself when you close the game (one admin prompt), or Tray ▸ Install update now."
+                    : "Tray ▸ Install update. One admin prompt, then the app restarts with your settings.");
                 Settings.Updates.LastAnnouncedVersion = update.Version.ToString();
                 SettingsStore.Save(Settings);
             }
@@ -214,8 +215,37 @@ public partial class App : Application
         }
     }
 
+    private bool AutoInstallOn => Settings.Updates.InstallAutomatically && !Updates.IsDevBuild;
+
+    /// <summary>
+    /// Installs a found update on its own when that won't interrupt anything: the game isn't running, the item lookup
+    /// is closed, and you didn't decline this version's admin prompt. Called after each check and when the game closes.
+    /// </summary>
+    private async Task<bool> TryAutoInstallAsync()
+    {
+        if (!AutoInstallOn || _availableUpdate is not { } update || _updateBusy || GameRunning
+            || (_itemLookup?.IsOpen ?? false) || update.Version.ToString() == _declinedVersion)
+            return false;
+        await InstallUpdateAsync(automatic: true);
+        return true;
+    }
+
+    /// <summary>A waiting update installs 20 seconds after the game closes (time to read the session banner) if it's still closed.</summary>
+    private void InstallUpdateAfterGameCloses()
+    {
+        var delay = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+        delay.Tick += async (_, _) =>
+        {
+            delay.Stop();
+            await TryAutoInstallAsync();
+        };
+        delay.Start();
+    }
+
     /// <summary>Download + verify the installer, run it silently (it relaunches the app), and exit.</summary>
-    public async Task InstallUpdateAsync()
+    public Task InstallUpdateAsync() => InstallUpdateAsync(automatic: false);
+
+    private async Task InstallUpdateAsync(bool automatic)
     {
         if (_availableUpdate is not { } update || _updateBusy) return;
         _updateBusy = true;
@@ -234,7 +264,8 @@ public partial class App : Application
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) // admin prompt declined
             {
-                Banner(AlertKind.Info, "Update cancelled", "The admin prompt was declined. Tray ▸ Install update to try again.");
+                if (automatic) _declinedVersion = update.Version.ToString(); // don't ask again for this version this run
+                Banner(AlertKind.Info, "Update postponed", "The admin prompt was declined. Tray ▸ Install update when you're ready.");
                 return;
             }
             Shutdown(); // the installer replaces the exe and starts the new version
@@ -420,6 +451,7 @@ public partial class App : Application
         var wasRunning = GameRunning;
         GameRunning = running;
         if (firstLook || running != wasRunning) UpdateOverlayVisibility();
+        if (wasRunning && !running && _availableUpdate != null) InstallUpdateAfterGameCloses();
 
         if (!Settings.Meter.AutoNewSession) return;
 

@@ -23,8 +23,8 @@ public static class ZoneSources
     public const string WikiName = "M&M Wiki (Miraheze)";
     public const string DropsName = "MnM Drops";
     public const string Attribution =
-        "Drop data: Monsters and Memories Wiki (monstersandmemories.miraheze.org, CC BY-SA 4.0) and MnM Drops (mnmdrops.com). " +
-        "Community-maintained, so it may be incomplete or out of date.";
+        "Drop data: Monsters and Memories Wiki (monstersandmemories.miraheze.org, CC BY-SA 4.0) and MnM Drops (mnmdrops.com); " +
+        "MnM Archive (mnmarchive.com) when the wiki is down. Community-maintained, so it may be incomplete or out of date.";
 
     private const string WikiApi = "https://monstersandmemories.miraheze.org/w/api.php";
     private const string DropsBase = "https://mnmdrops.com";
@@ -57,7 +57,7 @@ public static class ZoneSources
         {
             try
             {
-                foreach (var title in await Cached("zones-wiki", refresh, () => WikiZoneTitlesAsync(ct)))
+                foreach (var title in await Cached("zones-wiki", refresh, () => FromWiki(() => WikiZoneTitlesAsync(ct))))
                 {
                     var zone = Upsert(merged, title);
                     zone.WikiTitle = title;
@@ -84,6 +84,21 @@ public static class ZoneSources
             {
                 if (ct.IsCancellationRequested) throw;
                 errors.Add($"{DropsName}: {ex.Message}");
+            }
+        }
+
+        // Nothing from the wiki or MnM Drops (not even a saved list): the zone index on MnM Archive.
+        if (merged.Count == 0 && useWiki)
+        {
+            try
+            {
+                foreach (var name in await Cached("zones-archive", refresh, () => MnmArchive.ZoneNamesAsync(ct)))
+                    Upsert(merged, name);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                if (ct.IsCancellationRequested) throw;
+                errors.Add($"{MnmArchive.Name}: {ex.Message}");
             }
         }
 
@@ -115,7 +130,7 @@ public static class ZoneSources
             progress.Report($"Reading {WikiName}…");
             try
             {
-                results.Add(await Cached($"wiki-{zone.Key}", refresh, () => WikiZoneAsync(zone.WikiTitle, ct)));
+                results.Add(await Cached($"wiki-{zone.Key}", refresh, () => FromWiki(() => WikiZoneAsync(zone.WikiTitle, ct))));
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
             {
@@ -137,9 +152,44 @@ public static class ZoneSources
             }
         }
 
+        // No wiki data for this zone (down with nothing saved, or no page): its MnM Archive page.
+        if (useWiki && !results.Any(r => r.Source == WikiName))
+        {
+            try
+            {
+                if (await Cached($"archive-{zone.Key}", refresh, () => MnmArchive.GetZoneAsync(zone.Name, ct)) is { Mobs.Count: > 0 } archived)
+                {
+                    results.Add(archived);
+                    errors.RemoveAll(e => e.StartsWith(WikiName, StringComparison.Ordinal));
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                if (ct.IsCancellationRequested) throw;
+                errors.Add($"{MnmArchive.Name}: {ex.Message}");
+            }
+        }
+
         if (results.Count == 0 && errors.Count > 0) throw new HttpRequestException(string.Join("\n", errors));
         if (errors.Count > 0) progress.Report("Partly loaded. " + string.Join(" ", errors));
         return results;
+    }
+
+    /// <summary>Runs a wiki request, skipping it while the wiki is known to be down, and records the outcome.</summary>
+    private static async Task<T> FromWiki<T>(Func<Task<T>> fetch)
+    {
+        if (WikiStatus.LikelyDown) throw new HttpRequestException("The M&M Wiki is unreachable right now.");
+        try
+        {
+            var value = await fetch();
+            WikiStatus.Succeeded();
+            return value;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            WikiStatus.Failed();
+            throw;
+        }
     }
 
     // ---------------- Miraheze wiki (MediaWiki API) ----------------
@@ -355,20 +405,28 @@ public static class ZoneSources
         else existing.Slot ??= slot;
     }
 
+    /// <summary>
+    /// A saved copy younger than the cache age, else a fresh fetch (saved for next time). If the fetch fails, a saved
+    /// copy of any age is better than nothing (e.g. while the wiki is down).
+    /// </summary>
     private static async Task<T> Cached<T>(string key, bool refresh, Func<Task<T>> fetch)
     {
         var path = Path.Combine(CacheFolder, $"v{CacheVersion}-{key}.json");
-        if (!refresh && File.Exists(path) && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < CacheAge)
-        {
-            try
-            {
-                var cached = JsonSerializer.Deserialize<T>(await File.ReadAllTextAsync(path));
-                if (cached != null) return cached;
-            }
-            catch (JsonException) { }
-        }
+        if (!refresh && File.Exists(path) && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < CacheAge
+            && await ReadSaved<T>(path) is { } fresh)
+            return fresh;
 
-        var value = await fetch();
+        T value;
+        try
+        {
+            value = await fetch();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            if (File.Exists(path) && await ReadSaved<T>(path) is { } saved) return saved;
+            throw;
+        }
+        if (value == null) return value;
         try
         {
             Directory.CreateDirectory(CacheFolder);
@@ -376,5 +434,17 @@ public static class ZoneSources
         }
         catch (IOException) { }
         return value;
+    }
+
+    private static async Task<T?> ReadSaved<T>(string path)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(await File.ReadAllTextAsync(path));
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+            return default;
+        }
     }
 }

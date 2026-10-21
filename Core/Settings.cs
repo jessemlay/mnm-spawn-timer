@@ -253,10 +253,10 @@ public sealed class ItemLookupSettings
 
 public sealed class UpdateSettings
 {
-    /// <summary>Look for a newer release on startup and every few hours.</summary>
+    /// <summary>Look for a newer release at startup and every 2 hours.</summary>
     public bool CheckForUpdates { get; set; } = true;
 
-    /// <summary>Install a found update automatically, but only at app startup (never mid-session).</summary>
+    /// <summary>Install a found update by itself whenever the game isn't running (never mid-game).</summary>
     public bool InstallAutomatically { get; set; } = true;
 
     /// <summary>Latest version already announced with a banner, so it isn't repeated every check.</summary>
@@ -306,8 +306,11 @@ public static class SettingsStore
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpawnTimer", "settings.json");
 
     /// <summary>Machine-local cache (zone drop data etc.); losing it only costs a re-download.</summary>
+    /// <summary>Wiki/zone/picture caches and logs. SPAWNTIMER_CACHE_DIR moves it (tests use a copy, never the real one).</summary>
     public static string CacheFolder =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpawnTimer");
+        Environment.GetEnvironmentVariable("SPAWNTIMER_CACHE_DIR") is { Length: > 0 } dir
+            ? dir
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpawnTimer");
 
     public static AppSettings Load()
     {

@@ -18,6 +18,11 @@ Download **`SpawnTimer-Setup.exe`** (~2 MB) and run it. The installer:
 - adds a Start Menu shortcut, an optional desktop icon and "Start with Windows", and an uninstaller in Windows Settings ▸ Apps
 - upgrades in place when you run a newer one, keeping your settings
 
+After that the app **updates itself**. It checks GitHub at startup and every 2 hours, and installs a new version
+whenever the game isn't running. If you're playing, it waits until 20 seconds after you close the game. Windows asks
+for admin permission once per update, because the app lives in Program Files. If you decline, it waits until you
+choose Tray ▸ Install update. Turn it off in Settings ▸ Updates.
+
 Windows may show a SmartScreen warning because the installer isn't code-signed: click **More info ▸ Run anyway**.
 Settings live in `Documents\Spawn Timer\settings.json` (with a `.bak` of the previous session). Installs, updates and uninstalls never touch them. Versions before 1.4.0 used `%APPDATA%\SpawnTimer`; that file is copied over automatically the first time.
 The app lives in the system tray: right-click for Settings, Unlock/Lock overlays, Export, Reset session or Exit.
@@ -87,6 +92,15 @@ Press **Ctrl+Alt+M** (changeable) for the same box in mob mode, or press the oth
 
 Data comes from the [M&M Wiki on Miraheze](https://monstersandmemories.miraheze.org/) (CC BY-SA 4.0) and is cached
 for 7 days in `%LOCALAPPDATA%\SpawnTimer\item-cache\`.
+
+**When the wiki is down** (or has no page for something), the lookups keep working:
+
+- Saved copies are used **whatever their age**, marked "Saved Oct 11 · the wiki is offline". That covers items, the
+  search list, zone mob lists and mob pictures.
+- An item or zone with no saved copy comes from [MnM Archive](https://mnmarchive.com/), a separately hosted fan
+  reference built from the wiki (CC BY-SA 4.0). One page per lookup, a second apart, and cached. The card links to
+  the Archive page and credits it.
+- After a failure the wiki is skipped for 2 minutes, so lookups don't stall waiting on it.
 
 ## Hotkeys (defaults, change them in Settings ▸ Hotkeys)
 

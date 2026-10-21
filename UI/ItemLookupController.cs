@@ -62,7 +62,7 @@ public sealed class ItemLookupController
             _selected = _scroll + i; // rows are numbered within the visible window
             Refresh(scheduleDetails: true);
         };
-        _overlay.OpenSourceClicked += OpenSourcePage;
+        _overlay.OpenSourceClicked += OpenPage;
         _overlay.DropClicked += ShowItem;
         _overlay.Scrolled += notches =>
         {
@@ -85,12 +85,12 @@ public sealed class ItemLookupController
         };
     }
 
-    /// <summary>Opens the item's wiki page in the default browser (the lookup then closes as the browser comes forward).</summary>
-    private static void OpenSourcePage(string title)
+    /// <summary>Opens a page in the default browser (the lookup then closes as the browser comes forward).</summary>
+    private static void OpenPage(string url)
     {
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ItemDb.WikiUrl(title)) { UseShellExecute = true });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         }
         catch (System.ComponentModel.Win32Exception) { }
     }
@@ -236,7 +236,8 @@ public sealed class ItemLookupController
                 if (_results.Count > 0)
                 {
                     var title = _results[Math.Clamp(_selected, 0, _results.Count - 1)];
-                    _overlay.Dispatcher.BeginInvoke(() => OpenSourcePage(title), DispatcherPriority.Input);
+                    var url = _mode == LookupMode.Mobs ? MobPageUrl(title) : ItemDb.PageUrl(title);
+                    _overlay.Dispatcher.BeginInvoke(() => OpenPage(url), DispatcherPriority.Input);
                 }
                 return true;
             default:
@@ -375,6 +376,7 @@ public sealed class ItemLookupController
             Position = _results.Count > VisibleRows ? $"{_selected + 1} of {_results.Count}" : "",
             Details = mobs ? null : _details,
             Mob = mobs && _results.Count > 0 ? _mobResults[Math.Clamp(_selected, 0, _mobResults.Count - 1)] : null,
+            MobPageUrl = mobs && _results.Count > 0 ? MobPageUrl(_results[Math.Clamp(_selected, 0, _results.Count - 1)]) : "",
             MobImage = mobs ? _mobImage : null,
             UsableByYou = mobs ? UsableByYou() : null,
             PriceOf = PriceOf,
@@ -382,6 +384,9 @@ public sealed class ItemLookupController
             YourClass = _settings.ItemLookup.YourClass?.Trim() ?? "",
         });
     }
+
+    /// <summary>A mob's page: the wiki, or MnM Archive while the wiki is down.</summary>
+    private static string MobPageUrl(string name) => WikiStatus.LikelyDown ? MnmArchive.NpcUrl(name) : ItemDb.WikiUrl(name);
 
     /// <summary>Usable-by-your-class check for the mob card's drops (null when no class is set or stats aren't cached).</summary>
     private Func<string, bool?>? UsableByYou()
@@ -422,7 +427,9 @@ public sealed class ItemLookupController
             var found = await ItemDb.GetAsync(new[] { title }, CancellationToken.None);
             if (version != _detailsVersion || !IsOpen) return;
             _details = found.TryGetValue(title, out var d) ? d : null;
-            _cardMessage = _details == null ? "No stats on the wiki for this item." : "";
+            _cardMessage = _details != null ? ""
+                : WikiStatus.LikelyDown ? "The wiki is offline, and there's no saved copy or MnM Archive page for this item."
+                : "No stats on the wiki or MnM Archive for this item.";
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {

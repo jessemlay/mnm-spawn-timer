@@ -73,13 +73,23 @@ public static class MobImages
 
             var url = WikiApi + "?action=query&format=json&formatversion=2&redirects=1&prop=pageimages&piprop=thumbnail"
                       + "&pithumbsize=" + ThumbWidth + "&titles=" + Uri.EscapeDataString(mob);
+            // Wiki unreachable: a saved picture of any age (pictures rarely change). Nothing is recorded,
+            // so the mob is asked about again once the wiki is back.
+            if (WikiStatus.LikelyDown) return SavedAnyAge(mob);
             string? thumb = null;
-            using (var doc = JsonDocument.Parse(await Http.GetStringAsync(url, ct)))
+            try
             {
+                using var doc = JsonDocument.Parse(await Http.GetStringAsync(url, ct));
                 if (doc.RootElement.TryGetProperty("query", out var q) && q.TryGetProperty("pages", out var pages))
                     foreach (var page in pages.EnumerateArray())
                         if (page.TryGetProperty("thumbnail", out var t) && t.TryGetProperty("source", out var src))
                             thumb = src.GetString();
+                WikiStatus.Succeeded();
+            }
+            catch (Exception ex) when (ex is HttpRequestException or JsonException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+            {
+                WikiStatus.Failed();
+                return SavedAnyAge(mob);
             }
 
             var file = "";
@@ -109,6 +119,15 @@ public static class MobImages
         {
             Gate.Release();
         }
+    }
+
+    private static string? SavedAnyAge(string mob)
+    {
+        var entries = Load();
+        lock (entries)
+            return entries.TryGetValue(mob, out var e) && e.File.Length > 0 && System.IO.File.Exists(Path.Combine(Folder, e.File))
+                ? Path.Combine(Folder, e.File)
+                : null;
     }
 
     /// <summary>Only download from the wiki's own image servers.</summary>

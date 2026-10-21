@@ -28,6 +28,8 @@ public sealed class ItemLookupView
     public ItemDetails? Details { get; init; }
     /// <summary>Mob lookup: the highlighted mob (shown instead of <see cref="Details"/>).</summary>
     public MobInfo? Mob { get; init; }
+    /// <summary>Mob card: the page its link opens (the wiki, or MnM Archive while the wiki is down).</summary>
+    public string MobPageUrl { get; init; } = "";
     /// <summary>Mob card: path of the mob's cached wiki thumbnail, or null.</summary>
     public string? MobImage { get; init; }
     /// <summary>Mob card: item → usable by your class (null = unknown), for the drops list.</summary>
@@ -68,7 +70,7 @@ public partial class ItemSearchOverlay : OverlayWindow
     /// <summary>Raised on mouse wheel over the list, in notches (positive = up).</summary>
     public event Action<int>? Scrolled;
 
-    /// <summary>Raised when the card's "Open on M&amp;M Wiki" link is clicked, with the wiki page title.</summary>
+    /// <summary>Raised when a card's "Open on …" link (or the mob picture) is clicked, with the page address.</summary>
     public event Action<string>? OpenSourceClicked;
 
     /// <summary>Raised when a drop on the mob card is clicked, with the item's title.</summary>
@@ -137,7 +139,7 @@ public partial class ItemSearchOverlay : OverlayWindow
         Card.Children.Clear();
         if (view.Mob != null)
         {
-            RenderMobCard(view.Mob, view.MobImage, view.UsableByYou, view.PriceOf);
+            RenderMobCard(view.Mob, view.MobImage, view.MobPageUrl, view.UsableByYou, view.PriceOf);
             return;
         }
         var d = view.Details;
@@ -214,13 +216,20 @@ public partial class ItemSearchOverlay : OverlayWindow
         }
 
         AddGap();
-        AddWikiLink(d.Title, "Open this item's wiki page in your browser (Ctrl+O)");
-        AddLine("M&M Wiki on Miraheze (CC BY-SA 4.0) · Ctrl+O", Dim, 9.5);
+        // While the wiki is down: a saved copy (dated) or MnM Archive's page, credited and linked.
+        if (d.IsStale) AddLine($"Saved {d.FetchedUtc.ToLocalTime():MMM d} · the wiki is offline", Gold, 10.5);
+        var url = ItemDb.PageUrl(d.Title);
+        AddSourceLink(url, "Open this item's page in your browser (Ctrl+O)");
+        AddLine(Credit(url) + " · Ctrl\u2060+\u2060O", Dim, 9.5);
     }
+
+    private static bool IsArchive(string url) => url.StartsWith(MnmArchive.Base, StringComparison.OrdinalIgnoreCase);
+
+    private static string Credit(string url) => IsArchive(url) ? MnmArchive.Credit : "M&M Wiki on Miraheze (CC BY-SA 4.0)";
 
     private const int MaxDropRows = 16;
 
-    private void RenderMobCard(MobInfo mob, string? imagePath, Func<string, bool?>? usableByYou, Func<string, ItemPrice?>? priceOf)
+    private void RenderMobCard(MobInfo mob, string? imagePath, string pageUrl, Func<string, bool?>? usableByYou, Func<string, ItemPrice?>? priceOf)
     {
         CardBorder.Visibility = Visibility.Visible;
         // Header: name, level and zone on the left; the wiki thumbnail (if any) on the right.
@@ -237,13 +246,12 @@ public partial class ItemSearchOverlay : OverlayWindow
                 Margin = new Thickness(8, 2, 0, 0),
                 VerticalAlignment = VerticalAlignment.Top,
                 Cursor = Cursors.Hand,
-                ToolTip = "Open this mob's wiki page (Ctrl+O)",
+                ToolTip = "Open this mob's page (Ctrl+O)",
             };
-            var name = mob.Name;
             frame.MouseLeftButtonDown += (_, e) =>
             {
                 e.Handled = true; // a click, not a window drag
-                OpenSourceClicked?.Invoke(name);
+                OpenSourceClicked?.Invoke(pageUrl);
             };
             DockPanel.SetDock(frame, Dock.Right);
             header.Children.Add(frame);
@@ -296,11 +304,11 @@ public partial class ItemSearchOverlay : OverlayWindow
             };
             Card.Children.Add(row);
         }
-        if (mob.Drops.Count > MaxDropRows) AddLine($"+{mob.Drops.Count - MaxDropRows} more (on the wiki page)", Dim, 11);
+        if (mob.Drops.Count > MaxDropRows) AddLine($"+{mob.Drops.Count - MaxDropRows} more (on its page)", Dim, 11);
 
         AddGap();
-        AddWikiLink(mob.Name, "Open this mob's wiki page in your browser (Ctrl+O)");
-        AddLine((mob.Drops.Count > 0 ? "Click a drop to see its stats · " : "") + "M&M Wiki (CC BY-SA 4.0) · Ctrl+O", Dim, 9.5);
+        AddSourceLink(pageUrl, "Open this mob's page in your browser (Ctrl+O)");
+        AddLine((mob.Drops.Count > 0 ? "Click a drop to see its stats · " : "") + Credit(pageUrl) + " · Ctrl\u2060+\u2060O", Dim, 9.5);
     }
 
     /// <summary>Loads a cached thumbnail fully into memory (no file lock), or null if missing or unreadable.</summary>
@@ -323,11 +331,11 @@ public partial class ItemSearchOverlay : OverlayWindow
                                        or UnauthorizedAccessException or ArgumentException) { return null; }
     }
 
-    private void AddWikiLink(string title, string tooltip)
+    private void AddSourceLink(string url, string tooltip)
     {
         var link = new TextBlock
         {
-            Text = "Open on M&M Wiki ↗",
+            Text = IsArchive(url) ? "Open on MnM Archive ↗" : "Open on M&M Wiki ↗",
             Foreground = Accent,
             FontSize = 12,
             TextDecorations = TextDecorations.Underline,
@@ -338,7 +346,7 @@ public partial class ItemSearchOverlay : OverlayWindow
         link.MouseLeftButtonDown += (_, e) =>
         {
             e.Handled = true; // a click, not a window drag
-            OpenSourceClicked?.Invoke(title);
+            OpenSourceClicked?.Invoke(url);
         };
         Card.Children.Add(link);
     }
