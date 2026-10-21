@@ -74,10 +74,10 @@ public static class LedgerParser
     private static readonly HashSet<string> KnownActions = new(StringComparer.Ordinal)
     {
         "act_01", "act_02", "act_11", "act_12", "act_13", "act_14", "act_15", "act_16", "act_20", "act_24",
-        "act_31", "act_32", "act_33", "act_34", "act_35",
+        "act_31", "act_32", "act_33", "act_34", "act_35", "act_36",
     };
 
-    /// <summary>Entry fields seen so far (f10 arrived with 0.30.3, always empty so far).</summary>
+    /// <summary>Entry fields seen so far. f10 (0.30.3+) is the actor's class code on party (Social) entries, e.g. "clr", and empty on your own.</summary>
     private static readonly HashSet<string> KnownFields = new(StringComparer.Ordinal)
     {
         "f01", "f02", "f03", "f04", "f05", "f06", "f07", "f08", "f09", "f10",
@@ -130,7 +130,7 @@ public static class LedgerParser
         };
         // Character and Social files can both contain the same entry; dedupe on content, not file.
         ev.Key = string.Join('|', action, time, ev.Actor, f02, f03);
-        if (action is "act_16" or "act_20" or "act_31" or "act_32" or "act_33" or "act_34" or "act_35"
+        if (action is "act_16" or "act_20" or "act_31" or "act_32" or "act_33" or "act_34" or "act_35" or "act_36"
             && f02.StartsWith("name_", StringComparison.Ordinal))
             ev.Subject = Decode(f02[5..]);
 
@@ -264,6 +264,7 @@ public static class LedgerParser
         "act_33" => "Party disband",
         "act_34" => "Party leave",
         "act_35" => "Party leader change",
+        "act_36" => "Party invite",
         _ => e.Action,
     };
 

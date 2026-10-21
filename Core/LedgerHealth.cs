@@ -23,7 +23,12 @@ public sealed class LedgerHealth
     private DateTime _today = DateTime.Today;
     private int _entriesRead;
 
-    public static string LogPath => Path.Combine(SettingsStore.CacheFolder, "ledger-health.log");
+    public static string DefaultLogPath => Path.Combine(SettingsStore.CacheFolder, "ledger-health.log");
+
+    private readonly string _logPath;
+
+    /// <param name="logPath">Where to append details; defaults to %LOCALAPPDATA%SpawnTimerledger-health.log.</param>
+    public LedgerHealth(string? logPath = null) => _logPath = logPath ?? DefaultLogPath;
 
     public DateTimeOffset? LastEntryTime { get; private set; }
     public int SeriousCount => _issues.Where(i => i.Key.Kind != LedgerIssueKind.NewField).Sum(i => i.Value.Count);
@@ -122,20 +127,20 @@ public sealed class LedgerHealth
         "act_14" => "coin",
         "act_24" => "sales",
         "act_01" => "level-ups",
-        "act_31" or "act_32" or "act_33" or "act_34" or "act_35" => "party",
+        "act_31" or "act_32" or "act_33" or "act_34" or "act_35" or "act_36" => "party",
         "act_16" or "act_20" => "trades",
         _ => action,
     };
 
-    private static void AppendLog(string text)
+    private void AppendLog(string text)
     {
         if (text.Length == 0) return;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-            var info = new FileInfo(LogPath);
-            if (info.Exists && info.Length > MaxLogBytes) File.Move(LogPath, LogPath + ".old", overwrite: true);
-            File.AppendAllText(LogPath, text);
+            Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
+            var info = new FileInfo(_logPath);
+            if (info.Exists && info.Length > MaxLogBytes) File.Move(_logPath, _logPath + ".old", overwrite: true);
+            File.AppendAllText(_logPath, text);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
