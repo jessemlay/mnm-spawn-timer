@@ -843,12 +843,37 @@ public partial class App : Application
             ShowNamedDown(corpse, e.Zone, e.IsMine ? "You" : e.Actor, timer?.DurationSec, forceSound: false);
     }
 
-    private void ShowDropAlert(string item, string? corpse, string looter, bool forceSound)
+    private async void ShowDropAlert(string item, string? corpse, string looter, bool forceSound)
     {
         var detail = corpse == null ? $"Looted by {looter}" : $"Looted by {looter} from {corpse}";
+        if (await PartyUseLineAsync(item) is { } use) detail += Environment.NewLine + use;
         Banner(AlertKind.Drop, item, detail);
         var s = Settings.DropAlerts;
         _alerts.Drop(forceSound ? new DropAlertSettings { Sound = true, Speak = s.Speak } : s, item);
+    }
+
+    /// <summary>
+    /// "Usable by: you (CLR), Zetherin (PAL) · Not: …" for a drop banner. Zone items are usually cached already;
+    /// otherwise the wiki gets 2 seconds before the banner shows without the line.
+    /// </summary>
+    private async Task<string?> PartyUseLineAsync(string item)
+    {
+        var myClass = Settings.ItemLookup.YourClass?.Trim() is { Length: > 0 } set ? set : Session.MyClass;
+        var members = Session.PartyMembers(DateTimeOffset.Now);
+        if (string.IsNullOrEmpty(myClass) && members.Count == 0) return null;
+
+        var details = ItemDb.TryGetCached(item);
+        if (details == null)
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                var found = await ItemDb.GetAsync(new[] { item }, cts.Token);
+                found.TryGetValue(item, out details);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException) { }
+        }
+        return PartyUse.Describe(details, members, myClass);
     }
 
     private void ShowNamedDown(string corpse, string zone, string looter, int? respawnSec, bool forceSound)

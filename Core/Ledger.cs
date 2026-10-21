@@ -49,6 +49,8 @@ public sealed class LedgerEvent
     public string Zone { get; set; } = "";
     public string Actor { get; set; } = "";
     public string Owner { get; set; } = "";
+    /// <summary>The actor's class code from f10 on party entries (e.g. "CLR"); null on your own Character entries.</summary>
+    public string? ActorClass { get; set; }
     /// <summary>Server folder the entry came from (e.g. "tilustra"); set by whoever read the file.</summary>
     public string Server { get; set; } = "";
     public bool IsMine => string.Equals(Actor, Owner, StringComparison.OrdinalIgnoreCase);
@@ -128,6 +130,8 @@ public static class LedgerParser
             Actor = Str(e, "f07"),
             Owner = Str(e, "f09"),
         };
+        var actorClass = Str(e, "f10").Trim();
+        if (actorClass.Length > 0) ev.ActorClass = actorClass.ToUpperInvariant();
         // Character and Social files can both contain the same entry; dedupe on content, not file.
         ev.Key = string.Join('|', action, time, ev.Actor, f02, f03);
         if (action is "act_16" or "act_20" or "act_31" or "act_32" or "act_33" or "act_34" or "act_35" or "act_36"
