@@ -89,6 +89,17 @@ Press **Ctrl+Alt+M** (changeable) for the same box in mob mode, or press the oth
   **Ctrl+O** opens the mob's wiki page.
 - Mobs come from your current zone's drop list, plus every mob named in an item you've looked up or preloaded, so
   other zones' mobs fill in as you use it.
+- **Set up timers from the card.** The TIMER section names the timer its actions apply to, with **‹ ›** or
+  **Ctrl+←/→** to pick another. By default it's a timer the mob already belongs to, else the camp timer for a named
+  mob in the same zone (handy for placeholders), else your ▶ selected timer.
+  - **Restart on kill** (Ctrl+R): looting this mob restarts that timer.
+  - **Placeholder** (Ctrl+P): this mob can spawn in the named's place. Looting it while the timer is at zero starts
+    a new cycle.
+  - **New timer for this mob / named** (Ctrl+N): only shown if no timer restarts it yet. It uses the named respawn
+    time from Settings ▸ Alerts.
+
+  A mob is never both a restart mob and a placeholder for the same timer. Links show ✓ with a **remove**. Changes
+  save right away and show a banner; adjust times and lists in Settings ▸ Timers.
 
 Data comes from the [M&M Wiki on Miraheze](https://monstersandmemories.miraheze.org/) (CC BY-SA 4.0) and is cached
 for 7 days in `%LOCALAPPDATA%\SpawnTimer\item-cache\`.

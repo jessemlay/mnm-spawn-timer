@@ -70,6 +70,8 @@ public sealed class ItemLookupController
         };
         _overlay.OpenSourceClicked += OpenPage;
         _overlay.DropClicked += ShowItem;
+        _overlay.TimerActionClicked += DoTimerAction;
+        _overlay.TimerTargetClicked += CycleTimerTarget;
         _overlay.Scrolled += notches =>
         {
             // Mouse wheel scrolls the list (3 rows per notch) without changing the highlighted item.
@@ -108,6 +110,13 @@ public sealed class ItemLookupController
     }
 
     public bool IsOpen { get; private set; }
+
+    /// <summary>The app's timers, for the mob card's TIMER actions (null hides them).</summary>
+    public ITimerLinkHost? Timers { get; set; }
+
+    /// <summary>The timer the mob card's actions apply to, and the mob it was chosen for (reset when the highlight moves).</summary>
+    private Guid? _timerTargetId;
+    private string _timerTargetMob = "";
 
     /// <summary>Your merchant price for an item (from the sales database), for the cards.</summary>
     public Func<string, ItemPrice?>? PriceOf { get; set; }
@@ -247,6 +256,14 @@ public sealed class ItemLookupController
                     _overlay.Dispatcher.BeginInvoke(() => OpenPage(url), DispatcherPriority.Input);
                 }
                 return true;
+            case 0x52 when ctrl && _mode == LookupMode.Mobs: return TimerKey(MobTimerAction.Restart);     // Ctrl+R
+            case 0x50 when ctrl && _mode == LookupMode.Mobs: return TimerKey(MobTimerAction.Placeholder); // Ctrl+P
+            case 0x4E when ctrl && _mode == LookupMode.Mobs: return TimerKey(MobTimerAction.NewTimer);    // Ctrl+N
+            case 0x25 when ctrl && _mode == LookupMode.Mobs: // Ctrl+Left / Ctrl+Right: pick the target timer
+            case 0x27 when ctrl && _mode == LookupMode.Mobs:
+                var step = vk == 0x25 ? -1 : 1;
+                _overlay.Dispatcher.BeginInvoke(() => CycleTimerTarget(step), DispatcherPriority.Input);
+                return true;
             default:
                 if (ctrl) return true; // swallow Ctrl combos so they don't reach the game
                 var ch = KeyChar(vk, shift);
@@ -385,6 +402,7 @@ public sealed class ItemLookupController
             Position = _results.Count > VisibleRows ? $"{_selected + 1} of {_results.Count}" : "",
             Details = mobs ? null : _details,
             Mob = mobs && _results.Count > 0 ? _mobResults[Math.Clamp(_selected, 0, _mobResults.Count - 1)] : null,
+            MobTimers = mobs && SelectedMob is { } selectedMob ? TimerView(selectedMob) : null,
             MobPageUrl = mobs && _results.Count > 0 ? MobPageUrl(_results[Math.Clamp(_selected, 0, _results.Count - 1)]) : "",
             MobImage = mobs ? _mobImage : null,
             UsableByYou = mobs ? UsableByYou() : null,
@@ -392,6 +410,72 @@ public sealed class ItemLookupController
             CardMessage = _cardMessage,
             YourClass = _settings.ItemLookup.YourClass?.Trim() ?? "",
         });
+    }
+
+    private bool TimerKey(MobTimerAction action)
+    {
+        _overlay.Dispatcher.BeginInvoke(() => DoTimerAction(action), DispatcherPriority.Input);
+        return true;
+    }
+
+    private MobInfo? SelectedMob => _mode == LookupMode.Mobs && _mobResults.Count > 0
+        ? _mobResults[Math.Clamp(_selected, 0, _mobResults.Count - 1)]
+        : null;
+
+    /// <summary>The timer the actions apply to: picked with ‹ ›, else a sensible default for the highlighted mob.</summary>
+    private TimerDef? TimerTarget(MobInfo mob)
+    {
+        if (Timers == null) return null;
+        var timers = Timers.TimerDefs;
+        if (_timerTargetMob != mob.Name)
+        {
+            _timerTargetMob = mob.Name;
+            _timerTargetId = TimerLinks.DefaultTarget(mob, _mobs, timers, Timers.SelectedTimerDef)?.Id;
+        }
+        return timers.FirstOrDefault(t => t.Id == _timerTargetId) ?? timers.FirstOrDefault();
+    }
+
+    private void CycleTimerTarget(int step)
+    {
+        if (Timers == null || SelectedMob is not { } mob) return;
+        var timers = Timers.TimerDefs;
+        if (timers.Count < 2) return;
+        var at = timers.ToList().FindIndex(t => t.Id == TimerTarget(mob)?.Id);
+        _timerTargetId = timers[((at < 0 ? 0 : at) + step + timers.Count) % timers.Count].Id;
+        Render();
+    }
+
+    private void DoTimerAction(MobTimerAction action)
+    {
+        if (Timers == null || SelectedMob is not { } mob) return;
+        var target = TimerTarget(mob);
+        if (action != MobTimerAction.NewTimer && target == null) return;
+        if (Timers.LinkMob(action, mob.Name, mob.IsNamed, target) is { } changed) _timerTargetId = changed.Id;
+        if (IsOpen) Render();
+    }
+
+    private MobTimerView? TimerView(MobInfo mob)
+    {
+        if (Timers == null) return null;
+        var timers = Timers.TimerDefs;
+        var target = TimerTarget(mob);
+        var others = timers.Where(t => t != target).SelectMany(t => new[]
+        {
+            t.MatchesCorpse(mob.Name) ? $"restarts {t.Name}" : null,
+            t.MatchesPlaceholder(mob.Name) ? $"placeholder for {t.Name}" : null,
+        }).Where(x => x != null).ToList();
+        var index = target == null ? -1 : timers.ToList().IndexOf(target);
+        return new MobTimerView
+        {
+            Target = target?.Name,
+            Position = timers.Count > 1 && index >= 0 ? $"{index + 1} of {timers.Count}" : "",
+            Restarts = target?.MatchesCorpse(mob.Name) ?? false,
+            IsPlaceholder = target?.MatchesPlaceholder(mob.Name) ?? false,
+            CanRemoveRestart = target != null && TimerLinks.HasExact(target.MobNames, mob.Name),
+            CanRemovePlaceholder = target != null && TimerLinks.HasExact(target.PlaceholderNames, mob.Name),
+            CanCreate = !timers.Any(t => t.MatchesCorpse(mob.Name)),
+            Elsewhere = others.Count > 0 ? "Also: " + string.Join(" · ", others) : "",
+        };
     }
 
     /// <summary>A mob's page: the wiki, or MnM Archive while the wiki is down.</summary>

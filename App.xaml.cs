@@ -16,7 +16,7 @@ using Forms = System.Windows.Forms;
 
 namespace SpawnTimer;
 
-public partial class App : Application
+public partial class App : Application, ITimerLinkHost
 {
     private readonly List<(Hotkey Key, Action Action)> _bindings = new();
     private readonly Alerts _alerts = new();
@@ -123,7 +123,7 @@ public partial class App : Application
             if (_hook != null) _hook.Suspended = capturing;
         };
 
-        _itemLookup = new ItemLookupController(Settings);
+        _itemLookup = new ItemLookupController(Settings) { Timers = this };
         _itemLookup.OpenChanged += open =>
         {
             if (_hook != null) _hook.Capture = open ? CaptureKey : null;
@@ -842,6 +842,21 @@ public partial class App : Application
         var next = DateTime.Now.AddSeconds(def.DurationSec);
         Banner(AlertKind.PlaceholderDown, corpse,
             $"{def.Name} spawn point reset · next spawn ~{next:t} could be the named (PH cycle {def.PlaceholderCycles})");
+    }
+
+    // ---- Mob lookup → timers ----
+
+    IReadOnlyList<TimerDef> ITimerLinkHost.TimerDefs => Settings.Timers;
+
+    TimerDef? ITimerLinkHost.SelectedTimerDef => ActiveTimer?.Def;
+
+    TimerDef? ITimerLinkHost.LinkMob(MobTimerAction action, string mob, bool isNamed, TimerDef? target)
+    {
+        var (changed, title, detail) = TimerLinks.Apply(Settings, action, mob, isNamed, target);
+        if (changed == null) return null;
+        ApplySettings(); // saves, and syncs the runtime timers (a new one shows on the overlay)
+        Banner(AlertKind.Info, title, detail);
+        return changed;
     }
 
     private void OnNamedLooted(LedgerEvent e)

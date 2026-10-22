@@ -9,6 +9,24 @@ using SpawnTimer.Core;
 
 namespace SpawnTimer.UI;
 
+/// <summary>The mob card's TIMER section: the timer the actions apply to and how this mob is linked to it.</summary>
+public sealed class MobTimerView
+{
+    /// <summary>Name of the target timer, or null when there are no timers yet.</summary>
+    public string? Target { get; init; }
+    /// <summary>"2 of 3" when there's more than one timer to choose from.</summary>
+    public string Position { get; init; } = "";
+    public bool Restarts { get; init; }
+    public bool IsPlaceholder { get; init; }
+    /// <summary>The link is this exact name (a wildcard line like "a skeletal*" can't be removed per mob).</summary>
+    public bool CanRemoveRestart { get; init; }
+    public bool CanRemovePlaceholder { get; init; }
+    /// <summary>No timer restarts this mob yet, so offer to create one.</summary>
+    public bool CanCreate { get; init; }
+    /// <summary>Links to other timers, e.g. "Also: placeholder for Night Terror".</summary>
+    public string Elsewhere { get; init; } = "";
+}
+
 /// <summary>What the item lookup overlay shows; built by <see cref="ItemLookupController"/>.</summary>
 public sealed class ItemLookupView
 {
@@ -28,6 +46,8 @@ public sealed class ItemLookupView
     public ItemDetails? Details { get; init; }
     /// <summary>Mob lookup: the highlighted mob (shown instead of <see cref="Details"/>).</summary>
     public MobInfo? Mob { get; init; }
+    /// <summary>Mob card: the TIMER section (null hides it).</summary>
+    public MobTimerView? MobTimers { get; init; }
     /// <summary>Mob card: the page its link opens (the wiki, or MnM Archive while the wiki is down).</summary>
     public string MobPageUrl { get; init; } = "";
     /// <summary>Mob card: path of the mob's cached wiki thumbnail, or null.</summary>
@@ -75,6 +95,12 @@ public partial class ItemSearchOverlay : OverlayWindow
 
     /// <summary>Raised when a drop on the mob card is clicked, with the item's title.</summary>
     public event Action<string>? DropClicked;
+
+    /// <summary>Raised by the mob card's TIMER actions.</summary>
+    public event Action<MobTimerAction>? TimerActionClicked;
+
+    /// <summary>Raised by the TIMER section's ‹ › (−1 or +1) to pick another timer.</summary>
+    public event Action<int>? TimerTargetClicked;
 
     public void ApplyAppearance(OverlaySettings settings)
     {
@@ -139,7 +165,7 @@ public partial class ItemSearchOverlay : OverlayWindow
         Card.Children.Clear();
         if (view.Mob != null)
         {
-            RenderMobCard(view.Mob, view.MobImage, view.MobPageUrl, view.UsableByYou, view.PriceOf);
+            RenderMobCard(view.Mob, view.MobImage, view.MobPageUrl, view.UsableByYou, view.PriceOf, view.MobTimers);
             return;
         }
         var d = view.Details;
@@ -227,9 +253,87 @@ public partial class ItemSearchOverlay : OverlayWindow
 
     private static string Credit(string url) => IsArchive(url) ? MnmArchive.Credit : "M&M Wiki on Miraheze (CC BY-SA 4.0)";
 
-    private const int MaxDropRows = 16;
+    private const int MaxDropRows = 12;
 
-    private void RenderMobCard(MobInfo mob, string? imagePath, string pageUrl, Func<string, bool?>? usableByYou, Func<string, ItemPrice?>? priceOf)
+    /// <summary>
+    /// TIMER: which timer the actions apply to (‹ › picks another), whether this mob restarts it or is its
+    /// placeholder, and the actions with their keys. Done links show ✓ and a small "remove".
+    /// </summary>
+    private void RenderTimerSection(MobTimerView t, bool named)
+    {
+        AddGap();
+        var head = new DockPanel();
+        if (t.Position.Length > 0)
+        {
+            var pick = new StackPanel { Orientation = Orientation.Horizontal };
+            pick.Children.Add(Clickable("‹", Accent, 13, () => TimerTargetClicked?.Invoke(-1), "Previous timer (Ctrl+←)"));
+            pick.Children.Add(new TextBlock { Text = $" {t.Position} ", Foreground = Dim, FontSize = 10.5, VerticalAlignment = VerticalAlignment.Center });
+            pick.Children.Add(Clickable("›", Accent, 13, () => TimerTargetClicked?.Invoke(1), "Next timer (Ctrl+→)"));
+            DockPanel.SetDock(pick, Dock.Right);
+            head.Children.Add(pick);
+        }
+        head.Children.Add(new TextBlock { Text = "TIMER", Foreground = Accent, FontSize = 10.5, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
+        Card.Children.Add(head);
+
+        if (t.Target != null)
+        {
+            AddLine(t.Target, Gold, 12.5, FontWeights.SemiBold);
+            ActionRow(t.Restarts, "Restarts it when looted", "Restart on kill", "Ctrl+R",
+                MobTimerAction.Restart, t.CanRemoveRestart ? MobTimerAction.RemoveRestart : null);
+            ActionRow(t.IsPlaceholder, "Placeholder for it", "Placeholder", "Ctrl+P",
+                MobTimerAction.Placeholder, t.CanRemovePlaceholder ? MobTimerAction.RemovePlaceholder : null);
+        }
+        if (t.CanCreate)
+            ActionRow(false, "", named ? "New timer for this named" : "New timer for this mob", "Ctrl+N", MobTimerAction.NewTimer, null);
+        if (t.Elsewhere.Length > 0) AddLine(t.Elsewhere, Dim, 10.5);
+    }
+
+    /// <summary>"＋ Restart on kill   Ctrl+R" (the whole row clicks), or "✓ Restarts it when looted   remove".</summary>
+    private void ActionRow(bool done, string doneText, string addText, string key, MobTimerAction add, MobTimerAction? remove)
+    {
+        var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1), Background = Brushes.Transparent };
+        if (done)
+        {
+            if (remove is { } r)
+            {
+                var link = Clickable("remove", Dim, 10.5, () => TimerActionClicked?.Invoke(r), "Undo this link");
+                DockPanel.SetDock(link, Dock.Right);
+                row.Children.Add(link);
+            }
+            row.Children.Add(new TextBlock { Text = "✓ " + doneText, Foreground = Good, FontSize = 12 });
+        }
+        else
+        {
+            var hint = new TextBlock { Text = key, Foreground = Dim, FontSize = 10.5, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(hint, Dock.Right);
+            row.Children.Add(hint);
+            var label = new TextBlock { Text = "＋ " + addText, Foreground = Accent, FontSize = 12 };
+            row.Children.Add(label);
+            row.Cursor = Cursors.Hand;
+            row.MouseEnter += (_, _) => label.TextDecorations = TextDecorations.Underline;
+            row.MouseLeave += (_, _) => label.TextDecorations = null;
+            row.MouseLeftButtonDown += (_, e) =>
+            {
+                e.Handled = true; // a click, not a window drag
+                TimerActionClicked?.Invoke(add);
+            };
+        }
+        Card.Children.Add(row);
+    }
+
+    private static TextBlock Clickable(string text, Brush brush, double size, Action onClick, string tooltip)
+    {
+        var block = new TextBlock { Text = text, Foreground = brush, FontSize = size, Cursor = Cursors.Hand, ToolTip = tooltip, VerticalAlignment = VerticalAlignment.Center };
+        block.MouseLeftButtonDown += (_, e) =>
+        {
+            e.Handled = true; // a click, not a window drag
+            onClick();
+        };
+        return block;
+    }
+
+    private void RenderMobCard(MobInfo mob, string? imagePath, string pageUrl, Func<string, bool?>? usableByYou,
+        Func<string, ItemPrice?>? priceOf, MobTimerView? timers)
     {
         CardBorder.Visibility = Visibility.Visible;
         // Header: name, level and zone on the left; the wiki thumbnail (if any) on the right.
@@ -305,6 +409,7 @@ public partial class ItemSearchOverlay : OverlayWindow
             Card.Children.Add(row);
         }
         if (mob.Drops.Count > MaxDropRows) AddLine($"+{mob.Drops.Count - MaxDropRows} more (on its page)", Dim, 11);
+        if (timers != null) RenderTimerSection(timers, mob.IsNamed);
 
         AddGap();
         AddSourceLink(pageUrl, "Open this mob's page in your browser (Ctrl+O)");
