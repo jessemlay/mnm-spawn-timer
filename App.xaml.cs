@@ -66,7 +66,7 @@ public partial class App : Application, ITimerLinkHost
     /// <summary>One line for Settings ▸ Game data.</summary>
     public string SalesSummary => Sales == null
         ? "Sales database unavailable" + (_salesStatus.Length > 0 ? $": {_salesStatus}" : ".")
-        : $"{Sales.SaleCount} sales, {Sales.PricedItemCount} items priced{(_salesStatus.Length > 0 ? $" · {_salesStatus}" : "")}. ({Sales.FilePath})";
+        : $"{Sales.SaleCount} sales, {Sales.PricedItemCount} items priced, {Sales.PurchaseCount} purchases{(_salesStatus.Length > 0 ? $" · {_salesStatus}" : "")}. ({Sales.FilePath})";
 
     private SpawnTimerState? ActiveTimer =>
         Timers.Count == 0 ? null : Timers[Math.Clamp(_activeIndex, 0, Timers.Count - 1)];
@@ -129,6 +129,7 @@ public partial class App : Application, ITimerLinkHost
             if (_hook != null) _hook.Capture = open ? CaptureKey : null;
         };
         _itemLookup.PriceOf = item => Sales?.TryGetPrice(item);
+        _itemLookup.BuyPriceOf = item => Sales?.TryGetBuyPrice(item);
         _ = _itemLookup.PreloadIndexAsync();
 
         CreateTray();

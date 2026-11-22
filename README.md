@@ -149,8 +149,9 @@ once a second and enables:
 - **Item value**: your looted items priced from what **you** sold them for to merchants, e.g.
   "Item value ≈ 1s 93c (5 of 6 priced)", plus a **Coin + items** total and per-hour rate. An item counts once you've
   sold one; selling a new kind of item re-values the ones already looted that session.
-- **Sell prices in the lookup**: the item card shows "Sells for 1s 50c" (your latest sale), and the mob card shows
-  prices next to each drop you've sold before.
+- **Prices in the lookup**: the item card shows "Sells for 1s 50c" (your latest sale) and "Merchant sells for
+  17s 10c" (the latest price a merchant charged you), and the mob card shows prices next to each drop you've sold
+  before.
 - **Item drop alerts**: a banner and sound when a listed item is looted by you or your party.
   Patterns: `Exact Name`, `Head of*`, `*Longbow`, `*Bloodynose*`. The banner also says **who in your group can
   use it**, e.g. "Usable by: you (CLR), Zetherin (PAL) · Not: Kensho (MNK)", from the item's wiki class list and
@@ -184,6 +185,13 @@ your Ledger files (all characters and servers); after that each new sale is adde
 across characters and use each item's **latest** sale (per item, for stacks). Settings ▸ Game data shows how many
 sales and items it holds. You can open the file with any SQLite viewer (e.g. DB Browser for SQLite); the `sales`
 table has one row per sale.
+
+Purchases from merchants (Ledger `act_28`) go into a `purchases` table the same way, for the "Merchant sells for"
+price. The game deletes Ledger files after about a month, so this database is the only long-term record of your
+prices.
+
+The Ledger check also knows the entry types added since 0.30.3: `act_18` (coin dropped on the ground, never counted
+as loot), `act_27` (harvesting) and `act_28` (merchant purchases). Harvests are read but not shown on the meter.
 
 ### Ledger check (after patches)
 

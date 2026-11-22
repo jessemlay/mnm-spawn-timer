@@ -126,6 +126,8 @@ public sealed class LedgerHealth
         "act_13" => "items",
         "act_14" => "coin",
         "act_24" => "sales",
+        "act_27" => "harvests",
+        "act_28" => "purchases",
         "act_01" => "level-ups",
         "act_31" or "act_32" or "act_33" or "act_34" or "act_35" or "act_36" => "party",
         "act_16" or "act_20" => "trades",

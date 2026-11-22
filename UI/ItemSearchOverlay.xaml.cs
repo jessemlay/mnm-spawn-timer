@@ -56,6 +56,8 @@ public sealed class ItemLookupView
     public Func<string, bool?>? UsableByYou { get; init; }
     /// <summary>Your merchant price for an item (null = never sold); shown on both cards.</summary>
     public Func<string, ItemPrice?>? PriceOf { get; init; }
+    /// <summary>What a merchant last charged you for an item (null = never bought); item card only.</summary>
+    public Func<string, ItemPrice?>? BuyPriceOf { get; init; }
     public string CardMessage { get; init; } = "";
     public string YourClass { get; init; } = "";
 }
@@ -226,11 +228,19 @@ public partial class ItemSearchOverlay : OverlayWindow
         var weight = string.Join(" · ", new[] { d.Weight.Length > 0 ? $"WT {d.Weight}" : null, d.Size.Length > 0 ? d.Size : null }.Where(s => s != null));
         if (weight.Length > 0) AddLine(weight, Dim, 11.5);
 
-        if ((view.PriceOf?.Invoke(d.Name) ?? view.PriceOf?.Invoke(d.Title)) is { } price)
+        // Your own merchant prices: what you sold it for, and what a merchant charged you.
+        var sold = view.PriceOf?.Invoke(d.Name) ?? view.PriceOf?.Invoke(d.Title);
+        var bought = view.BuyPriceOf?.Invoke(d.Name) ?? view.BuyPriceOf?.Invoke(d.Title);
+        if (sold != null || bought != null) AddGap();
+        if (sold != null)
         {
-            AddGap();
-            AddPair("Sells for", PriceText(price.UnitCp), Gold);
-            AddLine($"your sale, {price.LastSold.LocalDateTime:MMM d}" + (price.Sales > 1 ? $" · sold {price.Sales}×" : ""), Dim, 10.5);
+            AddPair("Sells for", PriceText(sold.UnitCp), Gold);
+            AddLine($"your sale, {sold.LastSold.LocalDateTime:MMM d}" + (sold.Sales > 1 ? $" · sold {sold.Sales}×" : ""), Dim, 10.5);
+        }
+        if (bought != null)
+        {
+            AddPair("Merchant sells for", PriceText(bought.UnitCp));
+            AddLine($"you bought it {bought.LastSold.LocalDateTime:MMM d}" + (bought.Sales > 1 ? $" · {bought.Sales}×" : ""), Dim, 10.5);
         }
 
         if (d.DropsFrom.Count > 0)

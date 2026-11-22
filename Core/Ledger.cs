@@ -11,7 +11,16 @@ using System.Windows.Threading;
 
 namespace SpawnTimer.Core;
 
-public enum LedgerKind { Other, ItemLoot, CoinLoot, VendorSale, LevelUp, Party }
+public enum LedgerKind
+{
+    Other, ItemLoot, CoinLoot, VendorSale, LevelUp, Party,
+    /// <summary>Gathered from a resource node (act_27, e.g. Wood, Resin).</summary>
+    Harvest,
+    /// <summary>Bought from a merchant (act_28), with the price paid.</summary>
+    VendorPurchase,
+    /// <summary>Coin dropped on the ground (act_18). Coin leaving you, never loot.</summary>
+    CoinDrop,
+}
 
 public enum LedgerIssueKind
 {
@@ -75,8 +84,8 @@ public static class LedgerParser
     /// <summary>Action codes seen in the Ledger so far (0.30.x); anything else is reported as new.</summary>
     private static readonly HashSet<string> KnownActions = new(StringComparer.Ordinal)
     {
-        "act_01", "act_02", "act_11", "act_12", "act_13", "act_14", "act_15", "act_16", "act_20", "act_24",
-        "act_31", "act_32", "act_33", "act_34", "act_35", "act_36",
+        "act_01", "act_02", "act_11", "act_12", "act_13", "act_14", "act_15", "act_16", "act_18", "act_20", "act_24",
+        "act_27", "act_28", "act_31", "act_32", "act_33", "act_34", "act_35", "act_36",
     };
 
     /// <summary>Entry fields seen so far. f10 (0.30.3+) is the actor's class code on party (Social) entries, e.g. "clr", and empty on your own.</summary>
@@ -189,6 +198,26 @@ public static class LedgerParser
                     ev.CoinKind = Decode(Str(d, "d14"));
                     ev.CoinShareCp = ParseCoinCsv(Decode(Str(d, "d15")));
                     break;
+                case "act_27": // harvested from a node (d03 "harvest")
+                    ev.Kind = LedgerKind.Harvest;
+                    ev.Item = Str(d, "d04");
+                    ev.Quantity = Int(d, "d01") ?? 1;
+                    if (ev.Item.Length == 0) Missing("item name (d04)");
+                    break;
+                case "act_28": // bought from a merchant
+                    ev.Kind = LedgerKind.VendorPurchase;
+                    ev.Item = Str(d, "d04");
+                    ev.Quantity = Int(d, "d01") ?? 1;
+                    var paidText = Decode(Str(d, "d03"));
+                    ev.CoinTotalCp = ParseCoinWords(paidText);
+                    if (ev.Item.Length == 0) Missing("item name (d04)");
+                    if (!CoinWords.IsMatch(paidText)) Missing("price paid (d03)");
+                    break;
+                case "act_18": // coin dropped on the ground: same shape as a coin loot, but coin leaving you
+                    ev.Kind = LedgerKind.CoinDrop;
+                    ev.CoinTotalCp = ParseCoinCsv(Decode(Str(d, "d12"))) ?? Int(d, "d11") ?? 0;
+                    ev.CoinKind = Decode(Str(d, "d14"));
+                    break;
                 case "act_24":
                     ev.Kind = LedgerKind.VendorSale;
                     ev.Item = Str(d, "d04");
@@ -269,6 +298,9 @@ public static class LedgerParser
         "act_34" => "Party leave",
         "act_35" => "Party leader change",
         "act_36" => "Party invite",
+        "act_18" => "Dropped coin",
+        "act_27" => "Harvested",
+        "act_28" => "Bought from merchant",
         _ => e.Action,
     };
 
